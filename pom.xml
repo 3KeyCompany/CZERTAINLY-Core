@@ -17,8 +17,8 @@
         <querydsl.version>5.0.0</querydsl.version>
         <hsqldb.version>2.7.1</hsqldb.version>
         <nimbus-jose-jwt.version>9.37</nimbus-jose-jwt.version>
-        <okhttp.version>4.11.0</okhttp.version>
-        <mockwebserver.version>4.11.0</mockwebserver.version>
+        <okhttp.version>4.12.0</okhttp.version>
+        <mockwebserver.version>4.12.0</mockwebserver.version>
         <sonar.projectKey>3KeyCompany_CZERTAINLY-Core</sonar.projectKey>
     </properties>
 
