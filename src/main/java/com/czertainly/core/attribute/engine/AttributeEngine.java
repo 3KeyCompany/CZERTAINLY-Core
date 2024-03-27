@@ -435,7 +435,7 @@ public class AttributeEngine {
         }
 
         // delete content of metadata for this object as its content should be replaced
-        if (metadataAttribute.getProperties().isReplaceContent()) {
+        if (metadataAttribute.getProperties().isOverwrite()) {
             deleteObjectAttributeDefinitionContent(attributeDefinition.getUuid(), objectAttributeContentInfo.objectType(), objectAttributeContentInfo.objectUuid());
         }
         createObjectAttributeContent(attributeDefinition, objectAttributeContentInfo, contentItems);
