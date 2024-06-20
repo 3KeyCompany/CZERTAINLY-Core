@@ -39,6 +39,7 @@ import com.czertainly.core.service.model.SecuredList;
 import com.czertainly.core.service.v2.ExtendedAttributeService;
 import com.czertainly.core.util.AttributeDefinitionUtils;
 import com.czertainly.core.util.CertificateUtil;
+import com.czertainly.core.util.ValidatorUtil;
 import com.czertainly.core.util.X509ObjectToString;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
@@ -290,6 +291,9 @@ public class RaProfileServiceImpl implements RaProfileService {
     @ExternalAuthorization(resource = Resource.RA_PROFILE, action = ResourceAction.UPDATE, parentResource = Resource.AUTHORITY, parentAction = ResourceAction.DETAIL)
     public RaProfileAcmeDetailResponseDto activateAcmeForRaProfile(SecuredParentUUID authorityUuid, SecuredUUID uuid, SecuredUUID acmeProfileUuid, ActivateAcmeForRaProfileRequestDto request) throws ConnectorException, ValidationException, AttributeException {
         RaProfile raProfile = getRaProfileEntity(uuid);
+        if (ValidatorUtil.containsUnreservedCharacters(raProfile.getName())) {
+            throw new ValidationException(ValidationError.create("RA Profile name can contain only unreserved URI characters (alphanumeric, hyphen, period, underscore, and tilde)"));
+        }
         AcmeProfile acmeProfile = acmeProfileRepository.findByUuid(acmeProfileUuid).orElseThrow(() -> new NotFoundException(AcmeProfile.class, acmeProfileUuid));
 
         extendedAttributeService.mergeAndValidateIssueAttributes(raProfile, request.getIssueCertificateAttributes());

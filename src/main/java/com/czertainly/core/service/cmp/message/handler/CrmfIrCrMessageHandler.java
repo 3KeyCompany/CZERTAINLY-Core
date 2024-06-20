@@ -5,6 +5,7 @@ import com.czertainly.api.exception.CertificateRequestException;
 import com.czertainly.api.exception.NotFoundException;
 import com.czertainly.api.model.core.cmp.CmpTransactionState;
 import com.czertainly.api.model.core.enums.CertificateRequestFormat;
+import com.czertainly.api.model.core.enums.Protocol;
 import com.czertainly.api.model.core.v2.ClientCertificateDataResponseDto;
 import com.czertainly.api.model.core.v2.ClientCertificateSignRequestDto;
 import com.czertainly.api.interfaces.core.cmp.error.CmpBaseException;
@@ -82,7 +83,7 @@ public class CrmfIrCrMessageHandler implements MessageHandler<ClientCertificateD
             return clientOperationService.issueCertificate(
                     SecuredParentUUID.fromUUID(raProfile.getAuthorityInstanceReferenceUuid()),
                     raProfile.getSecuredUuid(),
-                    dto);
+                    dto, configuration.getProfile().getUuid(), null, Protocol.CMP);
         } catch (CertificateRequestException | NotFoundException | CertificateException | IOException |
                  NoSuchAlgorithmException | InvalidKeyException | CertificateOperationException e) {
             throw new CmpProcessingException(tid, PKIFailureInfo.systemFailure,

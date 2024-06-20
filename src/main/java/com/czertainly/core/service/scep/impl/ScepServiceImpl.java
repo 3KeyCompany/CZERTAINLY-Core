@@ -10,6 +10,7 @@ import com.czertainly.api.model.core.certificate.CertificateDetailDto;
 import com.czertainly.api.model.core.certificate.CertificateState;
 import com.czertainly.api.model.core.certificate.CertificateValidationStatus;
 import com.czertainly.api.model.core.enums.CertificateRequestFormat;
+import com.czertainly.api.model.core.enums.Protocol;
 import com.czertainly.api.model.core.scep.FailInfo;
 import com.czertainly.api.model.core.scep.MessageType;
 import com.czertainly.api.model.core.scep.PkiStatus;
@@ -447,7 +448,7 @@ public class ScepServiceImpl implements ScepService {
         }
         ClientCertificateDataResponseDto response;
         try {
-            response = clientOperationService.issueCertificate(raProfile.getAuthorityInstanceReference().getSecuredParentUuid(), raProfile.getSecuredUuid(), requestDto);
+            response = clientOperationService.issueCertificate(raProfile.getAuthorityInstanceReference().getSecuredParentUuid(), raProfile.getSecuredUuid(), requestDto, scepProfile.getUuid(), null, Protocol.SCEP);
         } catch (ConnectorException e) {
             throw new ScepException("Unable to use connector to issue certificate", e, FailInfo.BAD_REQUEST);
         } catch (CertificateException | CertificateOperationException e) {
@@ -513,7 +514,7 @@ public class ScepServiceImpl implements ScepService {
         }
         CertificateDetailDto response;
         try {
-            response = clientOperationService.submitCertificateRequest(requestDto);
+            response = clientOperationService.submitCertificateRequest(requestDto, scepProfile.getUuid(), null, Protocol.SCEP);
         } catch (CertificateException | NoSuchAlgorithmException | AttributeException | ConnectorException | CertificateRequestException e) {
             throw new ScepException("Unable to submit certificate request", e, FailInfo.BAD_REQUEST);
         }

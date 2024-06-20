@@ -227,7 +227,7 @@ public class ClientOperationServiceV2Test extends BaseSpringBootTest {
     @Disabled
     @Test
     public void testIssueCertificate_validationFail() {
-        Assertions.assertThrows(NotFoundException.class, () -> clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(raProfile.getAuthorityInstanceReferenceUuid()), SecuredUUID.fromString("abfbc322-29e1-11ed-a261-0242ac120002"), (ClientCertificateSignRequestDto) null));
+        Assertions.assertThrows(NotFoundException.class, () -> clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(raProfile.getAuthorityInstanceReferenceUuid()), SecuredUUID.fromString("abfbc322-29e1-11ed-a261-0242ac120002"), (ClientCertificateSignRequestDto) null, null, null, null));
     }
 
     @Test

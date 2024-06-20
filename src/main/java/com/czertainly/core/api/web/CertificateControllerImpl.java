@@ -148,7 +148,7 @@ public class CertificateControllerImpl implements CertificateController {
 
     @Override
     public CertificateDetailDto submitCertificateRequest(ClientCertificateRequestDto request) throws ValidationException, ConnectorException, CertificateException, NoSuchAlgorithmException, AttributeException, CertificateRequestException {
-        return clientOperationService.submitCertificateRequest(request);
+        return clientOperationService.submitCertificateRequest(request, null, null, null);
     }
 
     @Override

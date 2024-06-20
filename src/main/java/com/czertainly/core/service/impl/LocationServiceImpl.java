@@ -786,7 +786,7 @@ public class LocationServiceImpl implements LocationService {
                 logger.debug("Failed to issue Certificate for Location {}, {}. RA profile is not existing or does not have set authority", location.getName(), location.getUuid());
                 throw new LocationException("Failed to issue Certificate for Location " + location.getName() + ". RA profile is not existing or does not have set authority");
             }
-            clientCertificateDataResponseDto = clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(raProfile.get().getAuthorityInstanceReferenceUuid()), raProfile.get().getSecuredUuid(), clientCertificateSignRequestDto);
+            clientCertificateDataResponseDto = clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(raProfile.get().getAuthorityInstanceReferenceUuid()), raProfile.get().getSecuredUuid(), clientCertificateSignRequestDto, null, null, null);
         } catch (NotFoundException | java.security.cert.CertificateException | CertificateOperationException |
                  InvalidKeyException | IOException | NoSuchAlgorithmException | CertificateRequestException e) {
             logger.debug("Failed to issue Certificate for Location {}, {}: {}", location.getName(), location.getUuid(), e.getMessage());

@@ -21,6 +21,7 @@ import com.czertainly.api.model.core.certificate.*;
 import com.czertainly.api.model.core.compliance.ComplianceRuleStatus;
 import com.czertainly.api.model.core.compliance.ComplianceStatus;
 import com.czertainly.api.model.core.enums.CertificateRequestFormat;
+import com.czertainly.api.model.core.enums.Protocol;
 import com.czertainly.api.model.core.location.LocationDto;
 import com.czertainly.api.model.core.search.FilterFieldSource;
 import com.czertainly.api.model.core.search.SearchFieldDataByGroupDto;
@@ -178,6 +179,13 @@ public class CertificateServiceImpl implements CertificateService {
     private Map<String, ICertificateValidator> certificateValidatorMap;
 
     private CrlService crlService;
+
+    private CertificateProtocolAssociationRepository certificateProtocolAssociationRepository;
+
+    @Autowired
+    public void setCertificateProtocolAssociationRepository(CertificateProtocolAssociationRepository certificateProtocolAssociationRepository) {
+        this.certificateProtocolAssociationRepository = certificateProtocolAssociationRepository;
+    }
 
     @Autowired
     public void setCrlService(CrlService crlService) {
@@ -1179,7 +1187,10 @@ public class CertificateServiceImpl implements CertificateService {
             List<RequestAttributeDto> issueAttributes,
             UUID keyUuid,
             UUID raProfileUuid,
-            UUID sourceCertificateUuid
+            UUID sourceCertificateUuid,
+            UUID protocolProfileUuid,
+            UUID additionalProtocolUuid,
+            Protocol protocol
     ) throws NoSuchAlgorithmException, ConnectorException, AttributeException, CertificateRequestException {
         RaProfile raProfile = raProfileService.getRaProfileEntity(SecuredUUID.fromUUID(raProfileUuid));
         extendedAttributeService.mergeAndValidateIssueAttributes(raProfile, issueAttributes);
@@ -1246,6 +1257,16 @@ public class CertificateServiceImpl implements CertificateService {
         certificate.setCertificateRequest(certificateRequestEntity);
         certificate.setCertificateRequestUuid(certificateRequestEntity.getUuid());
         certificate = certificateRepository.save(certificate);
+
+        if (protocol != null) {
+            CertificateProtocolAssociation protocolAssociation = new CertificateProtocolAssociation();
+            protocolAssociation.setCertificateUuid(certificate.getUuid());
+            protocolAssociation.setProtocol(protocol);
+            protocolAssociation.setProtocolProfileUuid(protocolProfileUuid);
+            protocolAssociation.setAdditionalProtocolUuid(additionalProtocolUuid);
+            certificateProtocolAssociationRepository.save(protocolAssociation);
+        }
+
 
         // set owner of certificate to logged user
         objectAssociationService.setOwnerFromProfile(Resource.CERTIFICATE, certificate.getUuid());

@@ -12,6 +12,7 @@ import com.czertainly.api.model.core.certificate.CertificateChainResponseDto;
 import com.czertainly.api.model.core.certificate.CertificateDetailDto;
 import com.czertainly.api.model.core.certificate.CertificateState;
 import com.czertainly.api.model.core.enums.CertificateRequestFormat;
+import com.czertainly.api.model.core.enums.Protocol;
 import com.czertainly.api.model.core.v2.ClientCertificateDataResponseDto;
 import com.czertainly.api.model.core.v2.ClientCertificateRevocationDto;
 import com.czertainly.api.model.core.v2.ClientCertificateSignRequestDto;
@@ -1118,7 +1119,8 @@ public class AcmeServiceImpl implements AcmeService {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Requesting Certificate for the Order: {} and certificate signing request: {}", order, certificateSignRequestDto);
                 }
-                ClientCertificateDataResponseDto certificateOutput = clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(order.getAcmeAccount().getRaProfile().getAuthorityInstanceReferenceUuid()), order.getAcmeAccount().getRaProfile().getSecuredUuid(), certificateSignRequestDto);
+                ClientCertificateDataResponseDto certificateOutput = clientOperationService.issueCertificate(SecuredParentUUID.fromUUID(order.getAcmeAccount().getRaProfile().getAuthorityInstanceReferenceUuid()), order.getAcmeAccount().getRaProfile().getSecuredUuid(), certificateSignRequestDto,
+                        order.getAcmeAccount().getAcmeProfile().getUuid(), order.getAcmeAccount().getUuid(), Protocol.ACME);
                 order.setCertificateId(AcmeRandomGeneratorAndValidator.generateRandomId());
                 order.setCertificateReference(certificateService.getCertificateEntity(SecuredUUID.fromString(certificateOutput.getUuid())));
             } catch (Exception e) {
