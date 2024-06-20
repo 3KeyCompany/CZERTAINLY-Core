@@ -95,7 +95,7 @@ public class EntityInstanceServiceImpl implements EntityInstanceService {
         // filter entities based on attribute filters
         final List<UUID> objectUUIDs = attributeEngine.getResourceObjectUuidsByFilters(Resource.ENTITY, filter, request.getFilters());
 
-        final BiFunction<Root<EntityInstanceReference>, CriteriaBuilder, Predicate> additionalWhereClause = (root, cb) -> Sql2PredicateConverter.mapSearchFilter2Predicates(request.getFilters(), cb, root, objectUUIDs);
+        final BiFunction<Root<EntityInstanceReference>, CriteriaBuilder, Predicate> additionalWhereClause = (root, cb) -> Sql2PredicateConverter.mapSearchFilter2Predicates(request.getFilters(), cb, root, objectUUIDs, attributeEngine.findAllObjectUuids(Resource.ENTITY));
         final List<EntityInstanceDto> listedKeyDTOs = entityInstanceReferenceRepository.findUsingSecurityFilter(filter, List.of(), additionalWhereClause, p, (root, cb) -> cb.desc(root.get("created")))
                 .stream()
                 .map(EntityInstanceReference::mapToDto).toList();

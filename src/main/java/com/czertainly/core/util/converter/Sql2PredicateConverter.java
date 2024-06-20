@@ -30,19 +30,26 @@ public class Sql2PredicateConverter {
     private static final String SIGNATURE_VERIFICATION = "%\"Signature Verification\":{\"status\":\"%STATUS%\"%";
     private static final String CRL_VERIFICATION = "%\"CRL Verification\":{\"status\":\"%STATUS%\"%";
 
-    public static Predicate mapSearchFilter2Predicates(final List<SearchFilterRequestDto> dtos, final CriteriaBuilder criteriaBuilder, final Root root, final List<UUID> objectUUIDsToBeFiltered) {
+    public static Predicate mapSearchFilter2Predicates(final List<SearchFilterRequestDto> dtos, final CriteriaBuilder criteriaBuilder, final Root root, final List<UUID> objectUUIDsToBeFiltered, final List<UUID> objectUUIDsWithAttributes) {
         final List<Predicate> predicates = new ArrayList<>();
         boolean hasFilteredAttributes = false;
+        boolean hasIsEmptyAttributeFilter = false;
         for (final SearchFilterRequestDto dto : dtos) {
             if (dto.getFieldSource() == FilterFieldSource.PROPERTY) {
                 predicates.add(mapSearchFilter2Predicate(dto, criteriaBuilder, root));
             } else {
                 hasFilteredAttributes = true;
+                if (dto.getCondition() == FilterConditionOperator.EMPTY) hasIsEmptyAttributeFilter = true;
             }
         }
         final Predicate propertyPredicates = criteriaBuilder.and(predicates.toArray(new Predicate[]{}));
+        Predicate uuidOrPredicate;
         if (objectUUIDsToBeFiltered != null && !dtos.isEmpty() && hasFilteredAttributes) {
-            Predicate uuidOrPredicate = root.get("uuid").in(objectUUIDsToBeFiltered);
+            if (hasIsEmptyAttributeFilter) {
+                uuidOrPredicate = criteriaBuilder.or(root.get("uuid").in(objectUUIDsToBeFiltered), criteriaBuilder.not(root.get("uuid").in(objectUUIDsWithAttributes)));
+            } else {
+                uuidOrPredicate = root.get("uuid").in(objectUUIDsToBeFiltered);
+            }
             if (root.getJavaType().equals(CryptographicKeyItem.class)) {
                 uuidOrPredicate = criteriaBuilder.or(
                         uuidOrPredicate,
@@ -54,7 +61,7 @@ public class Sql2PredicateConverter {
     }
 
     public static Predicate mapSearchFilter2Predicates(final List<SearchFilterRequestDto> dtos, final CriteriaBuilder criteriaBuilder, final Root root) {
-        return mapSearchFilter2Predicates(dtos, criteriaBuilder, root, null);
+        return mapSearchFilter2Predicates(dtos, criteriaBuilder, root, null, null);
     }
 
     public static Predicate mapSearchFilter2Predicate(final SearchFilterRequestDto dto, final CriteriaBuilder criteriaBuilder, final Root root) {
@@ -67,7 +74,11 @@ public class Sql2PredicateConverter {
         for (final Object valueObject : objects) {
             predicates.add(processPredicate(criteriaBuilder, root, dto, valueObject));
         }
-        return predicates.size() > 1 ? criteriaBuilder.or(predicates.toArray(new Predicate[]{})) : predicates.get(0);
+        if (dto.getCondition() == FilterConditionOperator.NOT_EQUALS) {
+            return predicates.size() > 1 ? criteriaBuilder.and(predicates.toArray(new Predicate[]{})) : predicates.get(0);
+        } else {
+            return predicates.size() > 1 ? criteriaBuilder.or(predicates.toArray(new Predicate[]{})) : predicates.get(0);
+        }
     }
 
     private static Predicate processPredicate(final CriteriaBuilder criteriaBuilder, final Root root, final SearchFilterRequestDto dto, final Object valueObject) {
@@ -107,15 +118,19 @@ public class Sql2PredicateConverter {
         }
 
         Predicate predicate = null;
-        if (isBoolean) {
+        if (isBoolean && filterConditionOperator != FilterConditionOperator.NOT_EMPTY && filterConditionOperator != FilterConditionOperator.EMPTY) {
             if (searchableFields == null || searchableFields.getExpectedValue() == null) {
-                switch (filterConditionOperator) {
-                    case EQUALS ->
-                            predicate = criteriaBuilder.equal(expression.as(Boolean.class), Boolean.parseBoolean(expressionValue.toString()));
-                    case NOT_EQUALS ->
-                            predicate = criteriaBuilder.notEqual(expression.as(Boolean.class), Boolean.parseBoolean(expressionValue.toString()));
+                if (dto.getFieldSource() != FilterFieldSource.PROPERTY) {
+                    expressionValue = expressionValue.toString();
+                } else {
+                    switch (filterConditionOperator) {
+                        case EQUALS ->
+                                predicate = criteriaBuilder.equal(expression.as(Boolean.class), Boolean.parseBoolean(expressionValue.toString()));
+                        case NOT_EQUALS ->
+                                predicate = criteriaBuilder.notEqual(expression.as(Boolean.class), Boolean.parseBoolean(expressionValue.toString()));
+                    }
+                    return predicate;
                 }
-                return predicate;
             } else {
                 final Boolean booleanValue = Boolean.parseBoolean(expressionValue.toString());
                 expressionValue = searchableFields.getExpectedValue();
@@ -259,8 +274,12 @@ public class Sql2PredicateConverter {
     }
 
     private static Object findEnumByCustomValue(Object valueObject, final SearchableFields searchableFields) {
-        Optional<? extends IPlatformEnum> enumItem = Arrays.stream(searchableFields.getEnumClass().getEnumConstants()).filter(enumValue -> enumValue.getCode().equals(valueObject.toString())).findFirst();
-        return enumItem.isPresent() ? enumItem.get() : null;
+        if (valueObject != null) {
+            Optional<? extends IPlatformEnum> enumItem = Arrays.stream(searchableFields.getEnumClass().getEnumConstants()).filter(enumValue -> enumValue.getCode().equals(valueObject.toString())).findFirst();
+            return enumItem.orElse(null);
+        } else {
+            return null;
+        }
     }
 
     private static List<Object> readAndCheckIncomingValues(final SearchFilterRequestDto dto) {
@@ -352,13 +371,18 @@ public class Sql2PredicateConverter {
                     final List<Predicate> expressionPredicates = new ArrayList<>();
                     final List<Object> expressionValues = readAndCheckIncomingValues(dto);
                     for (final Object expressionValue : expressionValues) {
-                        final Predicate expressionPredicate = buildPredicateByCondition(criteriaBuilder, dto.getCondition(), jsonValueQuery, null, null, expressionValue, searchField.isDateTimeFormat(), searchField.isBooleanFormat(), dto, searchField);
+                        // For correct behaviour of search, for operators specified in switchOperatorForComplement instead first get uuids for which opposite holds
+                        final Predicate expressionPredicate = buildPredicateByCondition(criteriaBuilder, switchOperatorForComplement(dto.getCondition()), jsonValueQuery, null, null, expressionValue, searchField.isDateTimeFormat(), searchField.isBooleanFormat(), dto, searchField);
                         expressionPredicates.add(expressionPredicate);
                     }
                     subPredicates.add(expressionPredicates.size() > 1 ? criteriaBuilder.or(expressionPredicates.toArray(new Predicate[]{})) : expressionPredicates.get(0));
-
                     subquery.where(subPredicates.toArray(new Predicate[]{}));
-                    rootPredicates.add(criteriaBuilder.in(root.get("objectUuid")).value(subquery));
+                    // If operator was switched, return complement of query result
+                    if (dto.getCondition() == switchOperatorForComplement(dto.getCondition())) {
+                        rootPredicates.add(criteriaBuilder.in(root.get("objectUuid")).value(subquery));
+                    } else {
+                        rootPredicates.add(criteriaBuilder.not(criteriaBuilder.in(root.get("objectUuid")).value(subquery)));
+                    }
                 }
             }
         }
@@ -378,6 +402,23 @@ public class Sql2PredicateConverter {
     public static Query getAllValuesOfProperty(String property, Resource resource, EntityManager entityManager) {
         Class resourceClass = ResourceToClass.getClassByResource(resource);
         return entityManager.createQuery("SELECT DISTINCT " + property + " FROM " + resourceClass.getName());
+    }
+
+    private static FilterConditionOperator switchOperatorForComplement(FilterConditionOperator operator) {
+        switch (operator) {
+            case NOT_EQUALS -> {
+                return FilterConditionOperator.EQUALS;
+            }
+            case NOT_CONTAINS -> {
+                return FilterConditionOperator.CONTAINS;
+            }
+            case EMPTY -> {
+                return FilterConditionOperator.NOT_EMPTY;
+            }
+            default -> {
+                return operator;
+            }
+        }
     }
 
 

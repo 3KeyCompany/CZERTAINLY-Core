@@ -11,20 +11,19 @@ public enum SearchFieldTypeEnum {
             List.of(FilterConditionOperator.CONTAINS, FilterConditionOperator.NOT_CONTAINS, FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY, FilterConditionOperator.STARTS_WITH, FilterConditionOperator.ENDS_WITH)
             , false),
     DATE(FilterFieldType.DATE,
-            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER)
+            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY)
             , false),
     DATETIME(FilterFieldType.DATETIME,
-            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER)
+            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY)
             , false),
     NUMBER(FilterFieldType.NUMBER,
-            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER)
+            List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.GREATER, FilterConditionOperator.LESSER, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY)
             , false),
     LIST(FilterFieldType.LIST,
             List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY)
             , true),
-
     BOOLEAN(FilterFieldType.BOOLEAN,
-         List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS)
+         List.of(FilterConditionOperator.EQUALS, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY)
             , false),
     OTHERS_AS_STRING(FilterFieldType.STRING,
             List.of(FilterConditionOperator.CONTAINS, FilterConditionOperator.NOT_CONTAINS, FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS, FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY, FilterConditionOperator.STARTS_WITH, FilterConditionOperator.ENDS_WITH)

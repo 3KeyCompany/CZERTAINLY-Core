@@ -976,4 +976,8 @@ public class AttributeEngine {
 
         return loadAllContent ? null : authHelper.loadObjectPermissions(Resource.ATTRIBUTE, ResourceAction.MEMBERS);
     }
+
+    public List<UUID> findAllObjectUuids(Resource resource) {
+        return attributeContent2ObjectRepository.findDistinctObjectUuidsByObjectType(resource);
+    }
 }

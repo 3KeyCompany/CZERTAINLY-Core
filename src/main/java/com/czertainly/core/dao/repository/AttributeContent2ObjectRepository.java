@@ -120,4 +120,7 @@ public interface AttributeContent2ObjectRepository extends SecurityFilterReposit
     long deleteByAttributeContentItemAttributeDefinitionTypeAndConnectorUuidAndObjectTypeAndObjectUuidAndSourceObjectTypeAndSourceObjectUuid(AttributeType attributeType, UUID connectorUuid, Resource objectType, UUID objectUuid, Resource sourceObjectType, UUID sourceObjectUuid);
     long deleteByAttributeContentItemAttributeDefinitionTypeAndAttributeContentItemAttributeDefinitionOperationAndConnectorUuidAndObjectTypeAndObjectUuidAndSourceObjectTypeAndSourceObjectUuid(AttributeType attributeType, String operation, UUID connectorUuid, Resource objectType, UUID objectUuid, Resource sourceObjectType, UUID sourceObjectUuid);
 
+    @Query("SELECT DISTINCT objectUuid FROM AttributeContent2Object WHERE objectType = ?1")
+    List<UUID> findDistinctObjectUuidsByObjectType(Resource objectType);
+
 }
