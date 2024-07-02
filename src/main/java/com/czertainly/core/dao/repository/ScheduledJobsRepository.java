@@ -6,6 +6,6 @@ import org.springframework.stereotype.Repository;
 import java.util.UUID;
 
 @Repository
-public interface ScheduledJobsRepository extends SecurityFilterRepository<ScheduledJob, UUID>{
+public interface ScheduledJobsRepository extends SecurityFilterRepository<ScheduledJob, UUID> {
     ScheduledJob findByJobName(String jobName);
 }

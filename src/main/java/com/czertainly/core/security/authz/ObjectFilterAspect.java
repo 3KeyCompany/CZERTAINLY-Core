@@ -105,7 +105,7 @@ public class ObjectFilterAspect {
 
         OpaObjectAccessResult result = obtainObjectAccess(auth, voteProperties);
 
-        logger.trace(String.format("User has the following object access rights. %s", result.toString()));
+        logger.trace("User has the following object access rights. %s".formatted(result.toString()));
 
         SecurityResourceFilter resourceFilter = SecurityResourceFilter.create();
         resourceFilter.setResource(Resource.findByCode(voteProperties.get("name")));
@@ -129,8 +129,8 @@ public class ObjectFilterAspect {
         SecurityFilter filter = null;
 
         for (Object argument : arguments) {
-            if (argument instanceof SecurityFilter) {
-                filter = (SecurityFilter) argument;
+            if (argument instanceof SecurityFilter securityFilter) {
+                filter = securityFilter;
                 break;
             }
         }

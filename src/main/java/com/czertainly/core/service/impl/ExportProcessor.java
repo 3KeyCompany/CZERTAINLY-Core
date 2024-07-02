@@ -50,7 +50,7 @@ public class ExportProcessor {
         ExportResultDto result = new ExportResultDto();
 
         String fileNameDateTime = LocalDateTime.now().format(EXPORT_DATE_TIME_FORMAT);
-        String fileName = String.format("%s_%s.csv", fileNamePrefix, fileNameDateTime);
+        String fileName = "%s_%s.csv".formatted(fileNamePrefix, fileNameDateTime);
 
         if (data == null || data.isEmpty()) {
             result.setFileContent(new byte[0]);
@@ -81,7 +81,7 @@ public class ExportProcessor {
                     zos.finish();
                     zos.flush();
 
-                    result.setFileName(String.format("%s_%s.zip", fileNamePrefix, fileNameDateTime));
+                    result.setFileName("%s_%s.zip".formatted(fileNamePrefix, fileNameDateTime));
                     result.setFileContent(bos.toByteArray());
                 }
             } else {

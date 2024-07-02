@@ -1,10 +1,8 @@
 package com.czertainly.core.dao.repository;
 
-import com.czertainly.api.model.connector.cryptography.enums.TokenInstanceStatus;
 import com.czertainly.core.dao.entity.TokenInstanceReference;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,5 +13,4 @@ public interface TokenInstanceReferenceRepository extends SecurityFilterReposito
 
     Optional<TokenInstanceReference> findByName(String name);
 
-    List<TokenInstanceReference> findByStatus(TokenInstanceStatus status);
 }

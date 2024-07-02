@@ -3,15 +3,21 @@ package com.czertainly.core.dao.entity;
 import com.czertainly.api.model.core.notification.AttributeMappingDto;
 import com.czertainly.core.util.DtoMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "notification_instance_mapped_attributes")
 public class NotificationInstanceMappedAttributes extends UniquelyIdentified implements Serializable, DtoMapper<AttributeMappingDto> {
+
     @Column(name = "notification_instance_ref_uuid")
     private UUID notificationInstanceRefUuid;
 
@@ -26,47 +32,13 @@ public class NotificationInstanceMappedAttributes extends UniquelyIdentified imp
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "notification_instance_ref_uuid", referencedColumnName = "uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private NotificationInstanceReference notificationInstanceReference;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "attribute_definition_uuid", referencedColumnName = "uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private AttributeDefinition attributeDefinition;
-
-    public UUID getNotificationInstanceRefUuid() {
-        return notificationInstanceRefUuid;
-    }
-
-    public void setNotificationInstanceRefUuid(UUID notificationInstanceRefUuid) {
-        this.notificationInstanceRefUuid = notificationInstanceRefUuid;
-    }
-
-    public UUID getAttributeDefinitionUuid() {
-        return attributeDefinitionUuid;
-    }
-
-    public void setAttributeDefinitionUuid(UUID attributeDefinitionUuid) {
-        this.attributeDefinitionUuid = attributeDefinitionUuid;
-    }
-
-    public AttributeDefinition getAttributeDefinition() {
-        return attributeDefinition;
-    }
-
-    public UUID getMappingAttributeUuid() {
-        return mappingAttributeUuid;
-    }
-
-    public void setMappingAttributeUuid(UUID mappingAttributeUuid) {
-        this.mappingAttributeUuid = mappingAttributeUuid;
-    }
-
-    public String getMappingAttributeName() {
-        return mappingAttributeName;
-    }
-
-    public void setMappingAttributeName(String mappingAttributeName) {
-        this.mappingAttributeName = mappingAttributeName;
-    }
 
     @Override
     public AttributeMappingDto mapToDto() {
@@ -79,12 +51,18 @@ public class NotificationInstanceMappedAttributes extends UniquelyIdentified imp
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).append("uuid", uuid)
-                .append("notificationInstanceRefUuid", notificationInstanceRefUuid)
-                .append("attributeDefinitionUuid", attributeDefinitionUuid)
-                .append("mappingAttributeUuid", mappingAttributeUuid)
-                .append("mappingAttributeName", mappingAttributeName)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        NotificationInstanceMappedAttributes that = (NotificationInstanceMappedAttributes) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

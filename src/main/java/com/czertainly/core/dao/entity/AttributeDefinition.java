@@ -5,19 +5,19 @@ import com.czertainly.api.model.client.attribute.custom.CustomAttributeDefinitio
 import com.czertainly.api.model.client.attribute.custom.CustomAttributeDefinitionDto;
 import com.czertainly.api.model.client.attribute.metadata.GlobalMetadataDefinitionDetailDto;
 import com.czertainly.api.model.common.NameAndUuidDto;
-import com.czertainly.api.model.common.attribute.v2.*;
+import com.czertainly.api.model.common.attribute.v2.AttributeType;
+import com.czertainly.api.model.common.attribute.v2.BaseAttribute;
+import com.czertainly.api.model.common.attribute.v2.CustomAttribute;
+import com.czertainly.api.model.common.attribute.v2.MetadataAttribute;
 import com.czertainly.api.model.common.attribute.v2.content.AttributeContentType;
 import com.czertainly.api.model.common.attribute.v2.properties.CustomAttributeProperties;
 import com.czertainly.api.model.common.attribute.v2.properties.MetadataAttributeProperties;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.Setter;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
@@ -26,10 +26,13 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "attribute_definition")
 @EntityListeners(AuditingEntityListener.class)
@@ -37,6 +40,7 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Connector connector;
 
     @Column(name = "connector_uuid")
@@ -59,11 +63,9 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
     @Column(name = "label", nullable = false)
     private String label;
 
-    @Getter(AccessLevel.NONE)
     @Column(name = "required")
     private Boolean required;
 
-    @Getter(AccessLevel.NONE)
     @Column(name = "read_only")
     private Boolean readOnly;
 
@@ -71,11 +73,9 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
     @JdbcTypeCode(SqlTypes.JSON)
     private BaseAttribute definition;
 
-    @Getter(AccessLevel.NONE)
     @Column(name = "enabled")
     private Boolean enabled;
 
-    @Getter(AccessLevel.NONE)
     @Column(name = "global")
     private Boolean global;
 
@@ -91,10 +91,12 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
     protected LocalDateTime updatedAt;
 
     @OneToMany(mappedBy = "attributeDefinition", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private List<AttributeContentItem> contentItems;
 
     @JsonBackReference
     @OneToMany(mappedBy = "attributeDefinition", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private List<AttributeRelation> relations = new ArrayList<>();
 
     public void setConnector(Connector connector) {
@@ -104,10 +106,6 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
 
     public Boolean isEnabled() {
         return enabled;
-    }
-
-    public Boolean isGlobal() {
-        return global;
     }
 
     public Boolean isRequired() {
@@ -189,22 +187,18 @@ public class AttributeDefinition extends UniquelyIdentified implements ObjectAcc
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("connector", connector)
-                .append("connectorUuid", connectorUuid)
-                .append("attributeUuid", attributeUuid)
-                .append("name", name)
-                .append("type", type)
-                .append("contentType", contentType)
-                .append("label", label)
-                .append("required", required)
-                .append("readOnly", readOnly)
-                .append("enabled", enabled)
-                .append("global", global)
-                .append("operation", operation)
-                .append("definition", definition)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AttributeDefinition that = (AttributeDefinition) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

@@ -18,84 +18,73 @@ import com.czertainly.core.service.scep.impl.ScepServiceImpl;
 import com.czertainly.core.util.AttributeDefinitionUtils;
 import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "ra_profile")
 public class RaProfile extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<RaProfileDto>, Securable, ObjectAccessControlMapper<NameAndUuidDto> {
 
-    @Setter
-    @Getter
     @Column(name = "name")
     private String name;
 
-    @Setter
-    @Getter
     @Column(name = "description")
     private String description;
 
-    @Setter
-    @Getter
     @Column(name = "authority_instance_name")
     private String authorityInstanceName;
 
-    @Getter
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "authority_instance_ref_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
+    @JsonBackReference
     private AuthorityInstanceReference authorityInstanceReference;
 
-    @Getter
     @Column(name = "authority_instance_ref_uuid")
     private UUID authorityInstanceReferenceUuid;
 
-    @Setter
-    @Getter
     @Column(name = "enabled")
     private Boolean enabled;
 
-    @Setter
-    @Getter
     @Column(name = "authority_certificate_uuid")
     private UUID authorityCertificateUuid;
 
-    @Setter
-    @Getter
-    @ManyToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ManyToMany(cascade = {CascadeType.DETACH, CascadeType.MERGE, CascadeType.PERSIST, CascadeType.REFRESH})
     @JoinTable(
             name = "ra_profile_2_compliance_profile",
             joinColumns = @JoinColumn(name = "ra_profile_uuid"),
             inverseJoinColumns = @JoinColumn(name = "compliance_profile_uuid"))
+    @ToString.Exclude
     private Set<ComplianceProfile> complianceProfiles;
 
-    @Setter
     @OneToOne(mappedBy = "raProfile", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private RaProfileProtocolAttribute protocolAttribute;
 
     /**
      * Acme related objects for RA Profile
      */
-    @Getter
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "acme_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private AcmeProfile acmeProfile;
 
     @Column(name = "acme_profile_uuid")
     private UUID acmeProfileUuid;
 
-    @Getter
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "scep_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private ScepProfile scepProfile;
 
     @Column(name = "scep_profile_uuid")
@@ -104,9 +93,9 @@ public class RaProfile extends UniquelyIdentifiedAndAudited implements Serializa
     /**
      * CMP protocol related objects for RA Profile
      */
-    @Getter
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cmp_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private CmpProfile cmpProfile;
 
     @Column(name = "cmp_profile_uuid")
@@ -241,14 +230,6 @@ public class RaProfile extends UniquelyIdentifiedAndAudited implements Serializa
         else this.authorityInstanceReferenceUuid = null;
     }
 
-    public void setAuthorityInstanceReferenceUuid(UUID authorityInstanceReferenceUuid) {
-        this.authorityInstanceReferenceUuid = authorityInstanceReferenceUuid;
-    }
-
-    public void setAuthorityInstanceReferenceUuid(String authorityInstanceReferenceUuid) {
-        this.authorityInstanceReferenceUuid = UUID.fromString(authorityInstanceReferenceUuid);
-    }
-
     public void setAcmeProfile(AcmeProfile acmeProfile) {
         this.acmeProfile = acmeProfile;
         if (acmeProfile != null) this.acmeProfileUuid = acmeProfile.getUuid();
@@ -275,11 +256,18 @@ public class RaProfile extends UniquelyIdentifiedAndAudited implements Serializa
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("enabled", enabled)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        RaProfile raProfile = (RaProfile) o;
+        return getUuid() != null && Objects.equals(getUuid(), raProfile.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

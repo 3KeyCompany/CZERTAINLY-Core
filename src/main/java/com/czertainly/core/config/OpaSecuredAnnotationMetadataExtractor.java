@@ -39,8 +39,8 @@ public class OpaSecuredAnnotationMetadataExtractor implements AnnotationMetadata
         parentUUIDGetterClass.ifPresent(value -> attributes.add(new ExternalAuthorizationConfigAttribute("parentUUIDGetter", value)));
 
         logger.trace(
-                String.format(
-                        "Attributes extracted from secured annotation: [%s]",
+                
+                        "Attributes extracted from secured annotation: [%s]".formatted(
                         attributes.stream().map(ExternalAuthorizationConfigAttribute::getAttribute).collect(Collectors.joining(","))
                 )
         );

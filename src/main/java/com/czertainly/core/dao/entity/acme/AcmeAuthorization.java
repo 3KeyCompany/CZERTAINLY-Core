@@ -9,17 +9,18 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.SerializationUtil;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.Serializable;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "acme_authorization")
 public class AcmeAuthorization  extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<Authorization> {
@@ -39,6 +40,7 @@ public class AcmeAuthorization  extends UniquelyIdentifiedAndAudited implements 
 
     @JsonBackReference
     @OneToMany(mappedBy = "authorization", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<AcmeChallenge> challenges = new HashSet<>();
 
     @Column(name="wildcard")
@@ -46,6 +48,7 @@ public class AcmeAuthorization  extends UniquelyIdentifiedAndAudited implements 
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private AcmeOrder order;
 
     @Column(name = "order_uuid", nullable = false)
@@ -62,72 +65,9 @@ public class AcmeAuthorization  extends UniquelyIdentifiedAndAudited implements 
         return authorization;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("authorizationId", authorizationId)
-                .append("status", status)
-                .append("expires", expires)
-                .append("wildcard", wildcard)
-                .append("challenges", challenges)
-                .toString();
-    }
-
-    public AcmeOrder getOrder() {
-        return order;
-    }
-
     public void setOrder(AcmeOrder order) {
         this.order = order;
         this.orderUuid = order.getUuid();
-    }
-
-    public String getAuthorizationId() {
-        return authorizationId;
-    }
-
-    public void setAuthorizationId(String authorizationId) {
-        this.authorizationId = authorizationId;
-    }
-
-    public String getIdentifier() {
-        return identifier;
-    }
-
-    public void setIdentifier(String identifier) {
-        this.identifier = identifier;
-    }
-
-    public AuthorizationStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(AuthorizationStatus status) {
-        this.status = status;
-    }
-
-    public Date getExpires() {
-        return expires;
-    }
-
-    public void setExpires(Date expires) {
-        this.expires = expires;
-    }
-
-    public Boolean isWildcard() {
-        return wildcard;
-    }
-
-    public void setWildcard(Boolean isWildcard) {
-        this.wildcard = isWildcard;
-    }
-
-    public Set<AcmeChallenge> getChallenges() {
-        return challenges;
-    }
-
-    public void setChallenges(Set<AcmeChallenge> challenges) {
-        this.challenges = challenges;
     }
 
     private String getBaseUrl() {
@@ -140,24 +80,25 @@ public class AcmeAuthorization  extends UniquelyIdentifiedAndAudited implements 
                 + AcmeConstants.ACME_URI_HEADER + "/"
                 + order.getAcmeAccount().getAcmeProfile().getName();
     }
-    // Customer Getter for Authorization URL
+
+    // Custom Getter for Authorization URL
     public String getUrl() {
         return getBaseUrl() + "/authz/" + authorizationId;
     }
 
-    public Boolean getWildcard() {
-        return wildcard;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AcmeAuthorization that = (AcmeAuthorization) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public UUID getOrderUuid() {
-        return orderUuid;
-    }
-
-    public void setOrderUuid(UUID orderUuid) {
-        this.orderUuid = orderUuid;
-    }
-
-    public void setOrderUuid(String orderUuid) {
-        this.orderUuid = UUID.fromString(orderUuid);
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

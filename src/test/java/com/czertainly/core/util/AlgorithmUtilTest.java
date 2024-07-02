@@ -1,8 +1,8 @@
 package com.czertainly.core.util;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.security.NoSuchAlgorithmException;
 import java.security.Security;

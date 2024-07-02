@@ -54,9 +54,9 @@ public class UpdateCertificateStatusTask extends SchedulerJobProcessor {
         int certificatesUpdated = certificateService.updateCertificatesStatusScheduled();
         int expiredApprovals = approvalService.checkApprovalsExpiration();
 
-        String message = String.format("Updated status of %d certificate(s).", certificatesUpdated);
+        String message = "Updated status of %d certificate(s).".formatted(certificatesUpdated);
         if(expiredApprovals > 0) {
-            message += String.format(" Expired %d approval(s).", expiredApprovals);
+            message += " Expired %d approval(s).".formatted(expiredApprovals);
         }
 
         return new ScheduledTaskResult(SchedulerJobExecutionStatus.SUCCESS, message);

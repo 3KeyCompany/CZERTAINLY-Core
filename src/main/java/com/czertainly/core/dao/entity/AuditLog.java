@@ -6,12 +6,17 @@ import com.czertainly.api.model.core.audit.OperationStatusEnum;
 import com.czertainly.api.model.core.audit.OperationType;
 import com.czertainly.core.util.DtoMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "audit_log")
 public class AuditLog extends Audited implements Serializable, DtoMapper<AuditLogDto> {
@@ -64,84 +69,19 @@ public class AuditLog extends Audited implements Serializable, DtoMapper<AuditLo
         return dto;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public ObjectType getOrigination() {
-        return origination;
-    }
-
-    public void setOrigination(ObjectType origination) {
-        this.origination = origination;
-    }
-
-    public ObjectType getAffected() {
-        return affected;
-    }
-
-    public void setAffected(ObjectType affected) {
-        this.affected = affected;
-    }
-
-    public String getObjectIdentifier() {
-        return objectIdentifier;
-    }
-
-    public void setObjectIdentifier(String objectIdentifier) {
-        this.objectIdentifier = objectIdentifier;
-    }
-
-    public OperationType getOperation() {
-        return operation;
-    }
-
-    public void setOperation(OperationType operation) {
-        this.operation = operation;
-    }
-
-    public OperationStatusEnum getOperationStatus() {
-        return operationStatus;
-    }
-
-    public void setOperationStatus(OperationStatusEnum operationStatus) {
-        this.operationStatus = operationStatus;
-    }
-
-    public String getAdditionalData() {
-        return additionalData;
-    }
-
-    public void setAdditionalData(String additionalData) {
-        this.additionalData = additionalData;
-    }
-
-    public String getUuid() {
-        return uuid;
-    }
-
-    public void setUuid(String uuid) {
-        this.uuid = uuid;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AuditLog auditLog = (AuditLog) o;
+        return getId() != null && Objects.equals(getId(), auditLog.getId());
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("id", id)
-                .append("origination", origination)
-                .append("affected", affected)
-                .append("objectIdentifier", objectIdentifier)
-                .append("operation", operation)
-                .append("operationStatus", operationStatus)
-                .append("additionalData", additionalData)
-                .append("author", author)
-                .append("created", created)
-                .append("updated", updated)
-                .append("uuid", uuid)
-                .toString();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

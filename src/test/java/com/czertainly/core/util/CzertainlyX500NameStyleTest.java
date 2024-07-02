@@ -1,8 +1,8 @@
 package com.czertainly.core.util;
 
 import org.bouncycastle.asn1.x500.X500Name;
-import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

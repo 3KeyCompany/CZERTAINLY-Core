@@ -3,17 +3,20 @@ package com.czertainly.core.dao.entity.workflows;
 import com.czertainly.api.model.core.workflows.TriggerHistoryDto;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
-@Entity
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
+@Entity
 @Table(name = "trigger_history")
 public class TriggerHistory extends UniquelyIdentified {
 
@@ -22,6 +25,7 @@ public class TriggerHistory extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "trigger_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private Trigger trigger;
 
     @Column(name = "trigger_association_object_uuid")
@@ -46,6 +50,7 @@ public class TriggerHistory extends UniquelyIdentified {
     private String message;
 
     @OneToMany(mappedBy = "triggerHistory", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @ToString.Exclude
     private List<TriggerHistoryRecord> records = new ArrayList<>();
 
     public TriggerHistoryDto mapToDto() {
@@ -61,4 +66,19 @@ public class TriggerHistory extends UniquelyIdentified {
         return triggerHistoryDto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        TriggerHistory that = (TriggerHistory) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

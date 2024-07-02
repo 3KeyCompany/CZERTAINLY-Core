@@ -32,11 +32,11 @@ public class CzertainlyAuthenticationProvider implements AuthenticationProvider 
         AuthenticationInfo authInfo = authClient.authenticate(authRequest.getHeaders());
 
         if(authInfo.isAnonymous()) {
-            logger.trace(String.format("User not identified, using anonymous."));
+            logger.trace("User not identified, using anonymous.".formatted());
             return new AnonymousAuthenticationToken(UUID.randomUUID().toString(), new CzertainlyUserDetails(authInfo), authInfo.getAuthorities());
         }
 
-        logger.trace(String.format("User has been successfully authenticated as '%s'.", authInfo.getUsername()));
+        logger.trace("User has been successfully authenticated as '%s'.".formatted(authInfo.getUsername()));
         return new CzertainlyAuthenticationToken(new CzertainlyUserDetails(authInfo));
     }
 

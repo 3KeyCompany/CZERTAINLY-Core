@@ -42,10 +42,10 @@ public class AcmeCommonHelper {
     }
 
     public static JWK getJwkFromPublicKey(PublicKey publicKey) throws IllegalArgumentException {
-        if (publicKey instanceof ECPublicKey) {
-            return (new ECKey.Builder(Curve.P_256, (ECPublicKey) publicKey)).build();
-        } else if (publicKey instanceof RSAPublicKey) {
-            return (new com.nimbusds.jose.jwk.RSAKey.Builder((RSAPublicKey) publicKey)).build();
+        if (publicKey instanceof ECPublicKey key) {
+            return (new ECKey.Builder(Curve.P_256, key)).build();
+        } else if (publicKey instanceof RSAPublicKey key) {
+            return (new com.nimbusds.jose.jwk.RSAKey.Builder(key)).build();
         } else {
             throw new IllegalArgumentException("Unsupported public key type.");
         }

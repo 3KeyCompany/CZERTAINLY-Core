@@ -2,20 +2,20 @@ package com.czertainly.core.dao.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "crl")
 public class Crl extends UniquelyIdentified {
+
     @Column(name = "ca_certificate_uuid")
     private UUID caCertificateUuid;
 
@@ -45,9 +45,26 @@ public class Crl extends UniquelyIdentified {
 
     @OneToMany(mappedBy = "crl", fetch = FetchType.LAZY)
     @JsonBackReference
+    @ToString.Exclude
     private List<CrlEntry> crlEntries;
 
     public Map<String, CrlEntry> getCrlEntriesMap() {
         return crlEntries.stream().collect(Collectors.toMap(crlEntry -> crlEntry.getId().getSerialNumber(), crlEntry -> crlEntry));
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Crl crl = (Crl) o;
+        return getUuid() != null && Objects.equals(getUuid(), crl.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

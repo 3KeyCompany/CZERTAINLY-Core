@@ -366,7 +366,7 @@ public class ComplianceServiceImpl implements ComplianceService {
         complianceGroup.setDescription(group.getDescription());
         complianceGroup.setKind(kind);
         complianceGroup.setName(group.getName());
-        complianceGroup.setUuid(group.getUuid());
+        complianceGroup.setUuid(UUID.fromString(group.getUuid()));
         complianceGroup.setDecommissioned(false);
         logger.debug("Compliance Group DAO: {}", complianceGroup);
         return complianceGroup;
@@ -378,7 +378,7 @@ public class ComplianceServiceImpl implements ComplianceService {
         complianceRule.setDescription(rule.getDescription());
         complianceRule.setKind(kind);
         complianceRule.setName(rule.getName());
-        complianceRule.setUuid(rule.getUuid());
+        complianceRule.setUuid(UUID.fromString(rule.getUuid()));
         complianceRule.setDecommissioned(false);
         complianceRule.setCertificateType(rule.getCertificateType());
         complianceRule.setAttributes(rule.getAttributes());

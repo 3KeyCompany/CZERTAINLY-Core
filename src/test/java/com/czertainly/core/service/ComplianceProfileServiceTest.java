@@ -89,7 +89,7 @@ public class ComplianceProfileServiceTest extends BaseSpringBootTest {
         complianceGroup.setName("testGroup");
         complianceGroup.setKind("default");
         complianceGroup.setDescription("Sample description");
-        complianceGroup.setUuid("e8965d90-f1fd-11ec-b939-0242ac120003");
+        complianceGroup.setUuid(UUID.fromString("e8965d90-f1fd-11ec-b939-0242ac120003"));
         complianceGroup.setConnector(connector);
         complianceGroup.setConnectorUuid(connector.getUuid());
         complianceGroup = complianceGroupRepository.save(complianceGroup);
@@ -102,7 +102,7 @@ public class ComplianceProfileServiceTest extends BaseSpringBootTest {
         complianceRule.setKind("default");
         complianceRule.setName("Rule1");
         complianceRule.setDescription("Description");
-        complianceRule.setUuid("e8965d90-f1fd-11ec-b939-0242ac120002");
+        complianceRule.setUuid(UUID.fromString("e8965d90-f1fd-11ec-b939-0242ac120002"));
         complianceRule.setCertificateType(CertificateType.X509);
         complianceRule.setConnectorUuid(connector.getUuid());
         complianceRule.setGroup(complianceGroup);
@@ -138,7 +138,7 @@ public class ComplianceProfileServiceTest extends BaseSpringBootTest {
         complianceGroup2.setName("Group2");
         complianceGroup2.setKind("default");
         complianceGroup2.setDescription("Sample description");
-        complianceGroup2.setUuid("e8965d90-f1fd-11ec-b939-0242ac120005");
+        complianceGroup2.setUuid(UUID.fromString("e8965d90-f1fd-11ec-b939-0242ac120005"));
         complianceGroup2.setConnector(connector);
         complianceGroup2.setConnectorUuid(connector.getUuid());
         complianceGroupRepository.save(complianceGroup2);

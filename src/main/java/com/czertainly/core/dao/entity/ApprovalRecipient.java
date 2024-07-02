@@ -1,14 +1,19 @@
 package com.czertainly.core.dao.entity;
 
-import com.czertainly.api.model.client.approval.ApprovalStepRecipientDto;
 import com.czertainly.api.model.client.approval.ApprovalStatusEnum;
+import com.czertainly.api.model.client.approval.ApprovalStepRecipientDto;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.util.Date;
+import java.util.Objects;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "approval_recipient")
 public class ApprovalRecipient extends UniquelyIdentified {
@@ -21,6 +26,7 @@ public class ApprovalRecipient extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approval_step_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private ApprovalStep approvalStep;
 
     @Column(name = "approval_uuid")
@@ -28,6 +34,7 @@ public class ApprovalRecipient extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approval_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Approval approval;
 
     @Column(name = "status")
@@ -54,5 +61,19 @@ public class ApprovalRecipient extends UniquelyIdentified {
         return dto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ApprovalRecipient that = (ApprovalRecipient) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
 
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

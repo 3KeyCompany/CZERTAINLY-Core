@@ -5,16 +5,21 @@ import com.czertainly.api.model.core.certificate.CertificateEventHistoryDto;
 import com.czertainly.api.model.core.certificate.CertificateEventStatus;
 import com.czertainly.core.util.DtoMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.io.Serializable;
-import java.util.HashMap;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @EntityListeners(AuditingEntityListener.class)
 @Entity
 @Table(name = "certificate_event_history")
@@ -36,22 +41,11 @@ public class CertificateEventHistory extends UniquelyIdentifiedAndAudited implem
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificate_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private Certificate certificate;
 
     @Column(name = "certificate_uuid", nullable = false)
     private UUID certificateUuid;
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("created", created)
-                .append("createdBy", author)
-                .append("status", status)
-                .append("event", event)
-                .append("message", message)
-                .toString();
-    }
 
     @Override
     public CertificateEventHistoryDto mapToDto(){
@@ -59,52 +53,18 @@ public class CertificateEventHistory extends UniquelyIdentifiedAndAudited implem
         certificateEventHistoryDto.setCertificateUuid(certificate.getUuid().toString());
         certificateEventHistoryDto.setEvent(event);
         try {
-            certificateEventHistoryDto.setAdditionalInformation(new ObjectMapper().readValue(additionalInformation, HashMap.class));
+            certificateEventHistoryDto.setAdditionalInformation(
+                    new ObjectMapper().readValue(additionalInformation, new TypeReference<>() {})
+            );
         } catch (JsonProcessingException | IllegalArgumentException e) {
             certificateEventHistoryDto.setAdditionalInformation(null);
         }
-        certificateEventHistoryDto.setMessage(message);
         certificateEventHistoryDto.setUuid(uuid.toString());
+        certificateEventHistoryDto.setMessage(message);
         certificateEventHistoryDto.setCreated(created);
         certificateEventHistoryDto.setCreatedBy(author);
         certificateEventHistoryDto.setStatus(status);
         return certificateEventHistoryDto;
-    }
-
-    public CertificateEvent getEvent() {
-        return event;
-    }
-
-    public void setEvent(CertificateEvent event) {
-        this.event = event;
-    }
-
-    public CertificateEventStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(CertificateEventStatus status) {
-        this.status = status;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public String getAdditionalInformation() {
-        return additionalInformation;
-    }
-
-    public void setAdditionalInformation(String additionalInformation) {
-        this.additionalInformation = additionalInformation;
-    }
-
-    public Certificate getCertificate() {
-        return certificate;
     }
 
     public void setCertificate(Certificate certificate) {
@@ -112,15 +72,19 @@ public class CertificateEventHistory extends UniquelyIdentifiedAndAudited implem
         this.certificateUuid = certificate.getUuid();
     }
 
-    public UUID getCertificateUuid() {
-        return certificateUuid;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        CertificateEventHistory that = (CertificateEventHistory) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setCertificateUuid(UUID certificateUuid) {
-        this.certificateUuid = certificateUuid;
-    }
-
-    public void setCertificateUuid(String certificateUuid) {
-        this.certificateUuid = UUID.fromString(certificateUuid);
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

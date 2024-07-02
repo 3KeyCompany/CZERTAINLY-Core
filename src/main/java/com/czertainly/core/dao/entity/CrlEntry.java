@@ -2,16 +2,17 @@ package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.core.authority.CertificateRevocationReason;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.Date;
 import java.util.Objects;
-import java.util.UUID;
 
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "crl_entry")
 public class CrlEntry implements Serializable {
@@ -30,35 +31,19 @@ public class CrlEntry implements Serializable {
     @Enumerated(EnumType.STRING)
     private CertificateRevocationReason revocationReason;
 
-    public UUID getCrlUuid() {
-        return crl.getUuid();
-    }
-
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-
-        if (o == null || getClass() != o.getClass())
-            return false;
-
-        CrlEntry that = (CrlEntry) o;
-        return Objects.equals(crl, that.crl) &&
-                Objects.equals(id.getSerialNumber(), that.getId().getSerialNumber());
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        CrlEntry crlEntry = (CrlEntry) o;
+        return getId() != null && Objects.equals(getId(), crlEntry.getId());
     }
 
     @Override
-    public int hashCode() {
-        return Objects.hash(getCrlUuid(), id.getSerialNumber());
+    public final int hashCode() {
+        return Objects.hash(id);
     }
-
-    @Override
-    public String toString() {
-        return "CertificateLocation{" +
-                "id=" + id +
-                ", revocationReason='" + revocationReason + '\'' +
-                ", revocationDate='" + revocationDate + '\'' +
-                '}';
-    }
-
-
 }

@@ -7,16 +7,19 @@ import com.czertainly.api.model.core.workflows.ActionDto;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
-@Entity
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
+@Entity
 @Table(name = "action")
 public class Action extends UniquelyIdentified {
 
@@ -35,10 +38,12 @@ public class Action extends UniquelyIdentified {
             name = "action_2_execution",
             joinColumns = @JoinColumn(name = "action_uuid"),
             inverseJoinColumns = @JoinColumn(name = "execution_uuid"))
+    @ToString.Exclude
     private List<Execution> executions;
 
     @JsonBackReference
     @ManyToMany(mappedBy = "actions", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<Trigger> triggers = new HashSet<>();
 
     public ActionDto mapToDto() {
@@ -60,4 +65,19 @@ public class Action extends UniquelyIdentified {
         return actionDetailDto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Action action = (Action) o;
+        return getUuid() != null && Objects.equals(getUuid(), action.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

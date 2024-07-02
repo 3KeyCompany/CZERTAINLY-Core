@@ -42,13 +42,13 @@ public class CzertainlyAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain filterChain) throws ServletException, IOException {
         if (isAuthenticationNeeded(request)) {
-            logger.trace(String.format("Going to authenticate the '%s' request on '%s'.", request.getMethod(), request.getRequestURI()));
+            logger.trace("Going to authenticate the '%s' request on '%s'.".formatted(request.getMethod(), request.getRequestURI()));
             CzertainlyAuthenticationRequest authRequest = this.authenticationConverter.convert(request);
 
             try {
                 Authentication authResult = this.authenticationManager.authenticate(authRequest);
 
-                logger.trace(String.format("Authentication result: %s", authResult.isAuthenticated() ? "authenticated" : "unauthenticated"));
+                logger.trace("Authentication result: %s".formatted(authResult.isAuthenticated() ? "authenticated" : "unauthenticated"));
 
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authResult);

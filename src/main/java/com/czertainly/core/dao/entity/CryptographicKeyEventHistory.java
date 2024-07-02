@@ -5,15 +5,20 @@ import com.czertainly.api.model.core.cryptography.key.KeyEventHistoryDto;
 import com.czertainly.api.model.core.cryptography.key.KeyEventStatus;
 import com.czertainly.core.util.DtoMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
-import java.util.HashMap;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "key_event_history")
 public class CryptographicKeyEventHistory extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<KeyEventHistoryDto> {
@@ -34,22 +39,11 @@ public class CryptographicKeyEventHistory extends UniquelyIdentifiedAndAudited i
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "key_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private CryptographicKeyItem key;
 
     @Column(name = "key_uuid", nullable = false)
     private UUID keyUuid;
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("created", created)
-                .append("createdBy", author)
-                .append("status", status)
-                .append("event", event)
-                .append("message", message)
-                .toString();
-    }
 
     @Override
     public KeyEventHistoryDto mapToDto() {
@@ -57,7 +51,10 @@ public class CryptographicKeyEventHistory extends UniquelyIdentifiedAndAudited i
         keyEventHistoryDto.setKeyUuid(key.getUuid().toString());
         keyEventHistoryDto.setEvent(event);
         try {
-            keyEventHistoryDto.setAdditionalInformation(new ObjectMapper().readValue(additionalInformation, HashMap.class));
+            keyEventHistoryDto.setAdditionalInformation(
+                    new ObjectMapper().readValue(additionalInformation, new TypeReference<>() {
+                    })
+            );
         } catch (JsonProcessingException | IllegalArgumentException e) {
             keyEventHistoryDto.setAdditionalInformation(null);
         }
@@ -69,52 +66,24 @@ public class CryptographicKeyEventHistory extends UniquelyIdentifiedAndAudited i
         return keyEventHistoryDto;
     }
 
-    public KeyEvent getEvent() {
-        return event;
-    }
-
-    public void setEvent(KeyEvent event) {
-        this.event = event;
-    }
-
-    public KeyEventStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(KeyEventStatus status) {
-        this.status = status;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public String getAdditionalInformation() {
-        return additionalInformation;
-    }
-
-    public void setAdditionalInformation(String additionalInformation) {
-        this.additionalInformation = additionalInformation;
-    }
-
-    public CryptographicKeyItem getKey() {
-        return key;
-    }
-
     public void setKey(CryptographicKeyItem key) {
         this.key = key;
         if (key != null) this.setKeyUuid(key.getUuid());
     }
 
-    public UUID getKeyUuid() {
-        return keyUuid;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        CryptographicKeyEventHistory that = (CryptographicKeyEventHistory) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setKeyUuid(UUID keyUuid) {
-        this.keyUuid = keyUuid;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

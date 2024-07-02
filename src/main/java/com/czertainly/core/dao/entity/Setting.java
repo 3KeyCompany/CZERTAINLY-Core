@@ -2,11 +2,15 @@ package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.core.settings.SettingsSection;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.util.Objects;
+
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "setting")
 public class Setting extends UniquelyIdentifiedAndAudited {
@@ -24,59 +28,19 @@ public class Setting extends UniquelyIdentifiedAndAudited {
     @Column(name = "value", length = Integer.MAX_VALUE)
     private String value;
 
-    public SettingsSection getSection() {
-        return section;
-    }
-
-    public void setSection(SettingsSection section) {
-        this.section = section;
-    }
-
-    public String getCategory() {
-        return category;
-    }
-
-    public void setCategory(String category) {
-        this.category = category;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getValue() {
-        return value;
-    }
-
-    public void setValue(String value) {
-        this.value = value;
-    }
-
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("section", section)
-                .append("category", category)
-                .append("name", name)
-                .append("value", value)
-                .toString();
-    }
-
-    @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Setting that = (Setting) o;
-        return new EqualsBuilder().append(uuid, that.uuid).append(section, that.section).append(name, that.name).isEquals();
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Setting setting = (Setting) o;
+        return getUuid() != null && Objects.equals(getUuid(), setting.getUuid());
     }
 
     @Override
-    public int hashCode() {
-        return new HashCodeBuilder(17, 37).append(uuid).toHashCode();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

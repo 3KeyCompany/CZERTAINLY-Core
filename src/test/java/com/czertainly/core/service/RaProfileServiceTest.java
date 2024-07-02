@@ -6,13 +6,16 @@ import com.czertainly.api.model.client.approvalprofile.ApprovalProfileRelationDt
 import com.czertainly.api.model.client.raprofile.AddRaProfileRequestDto;
 import com.czertainly.api.model.client.raprofile.EditRaProfileRequestDto;
 import com.czertainly.api.model.common.NameAndUuidDto;
+import com.czertainly.api.model.common.attribute.v2.BaseAttribute;
 import com.czertainly.api.model.core.auth.Resource;
 import com.czertainly.api.model.core.connector.ConnectorStatus;
+import com.czertainly.api.model.core.connector.FunctionGroupCode;
 import com.czertainly.api.model.core.raprofile.RaProfileDto;
 import com.czertainly.core.dao.entity.*;
 import com.czertainly.core.dao.repository.*;
 import com.czertainly.core.security.authz.SecuredUUID;
 import com.czertainly.core.security.authz.SecurityFilter;
+import com.czertainly.core.util.MetaDefinitions;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import org.junit.jupiter.api.AfterEach;
@@ -22,9 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.security.cert.CertificateException;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 public class RaProfileServiceTest extends ApprovalProfileData {
 
@@ -47,6 +48,11 @@ public class RaProfileServiceTest extends ApprovalProfileData {
     @Autowired
     private ConnectorRepository connectorRepository;
     @Autowired
+    private FunctionGroupRepository functionGroupRepository;
+    @Autowired
+    private Connector2FunctionGroupRepository connector2FunctionGroupRepository;
+
+    @Autowired
     private ApprovalProfileRelationRepository approvalProfileRelationRepository;
     private RaProfile raProfile;
     private Certificate certificate;
@@ -63,6 +69,28 @@ public class RaProfileServiceTest extends ApprovalProfileData {
 
         WireMock.configureFor("localhost", mockServer.port());
 
+        connector = new Connector();
+        connector.setUuid(UUID.randomUUID());
+        connector.setName("authorityInstanceConnector");
+        connector.setUrl("http://localhost:"+mockServer.port());
+        connector.setStatus(ConnectorStatus.CONNECTED);
+        connector = connectorRepository.save(connector);
+
+        FunctionGroup functionGroup = new FunctionGroup();
+        functionGroup.setCode(FunctionGroupCode.AUTHORITY_PROVIDER);
+        functionGroup.setName(FunctionGroupCode.AUTHORITY_PROVIDER.getCode());
+        functionGroupRepository.save(functionGroup);
+
+        Connector2FunctionGroup c2fg = new Connector2FunctionGroup();
+        c2fg.setConnector(connector);
+        c2fg.setConnectorUuid(connector.getUuid());
+        c2fg.setFunctionGroup(functionGroup);
+        c2fg.setFunctionGroupUuid(functionGroup.getUuid());
+        c2fg.setKinds(MetaDefinitions.serializeArrayString(List.of("ApiKey")));
+        connector2FunctionGroupRepository.save(c2fg);
+
+        connector.getFunctionGroups().add(c2fg);
+        connectorRepository.save(connector);
 
         certificateContent = new CertificateContent();
         certificateContent = certificateContentRepository.save(certificateContent);
@@ -71,11 +99,6 @@ public class RaProfileServiceTest extends ApprovalProfileData {
         certificate.setCertificateContent(certificateContent);
         certificate.setSerialNumber("123456789");
         certificate = certificateRepository.save(certificate);
-
-        connector = new Connector();
-        connector.setUrl("http://localhost:"+mockServer.port());
-        connector.setStatus(ConnectorStatus.CONNECTED);
-        connector = connectorRepository.save(connector);
 
         authorityInstanceReference = new AuthorityInstanceReference();
         authorityInstanceReference.setAuthorityInstanceUuid("1l");
@@ -317,7 +340,17 @@ public class RaProfileServiceTest extends ApprovalProfileData {
         requestAdd.setAttributes(List.of());
         RaProfileDto dto = raProfileService.addRaProfile(authorityInstanceReference.getSecuredParentUuid(), requestAdd);
         Assertions.assertEquals(raProfile.getAuthorityCertificateUuid(), raProfileRepository.findByUuid(UUID.fromString(dto.getUuid())).get().getAuthorityCertificateUuid());
+    }
 
+    @Test
+    public void testListIssueCertificateAttributes() throws ConnectorException {
+        mockServer.stubFor(WireMock
+                .get(WireMock.urlPathMatching("/v2/authorityProvider/authorities/[^/]+/certificates/issue/attributes"))
+                .willReturn(WireMock.okJson("""
+                        []""")));
+
+        List<BaseAttribute> attributes = raProfileService.listIssueCertificateAttributes(authorityInstanceReference.getSecuredParentUuid(), raProfile.getSecuredUuid());
+        Assertions.assertNotNull(attributes);
     }
 
 }

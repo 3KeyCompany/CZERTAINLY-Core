@@ -3,7 +3,6 @@ package com.czertainly.core.dao.repository;
 import com.czertainly.core.dao.entity.Credential;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,8 +12,5 @@ public interface CredentialRepository extends SecurityFilterRepository<Credentia
     Optional<Credential> findByUuid(UUID uuid);
 
     Optional<Credential> findByName(String name);
-
-    List<Credential> findByKindAndEnabledTrue(String kind);
-
 
 }

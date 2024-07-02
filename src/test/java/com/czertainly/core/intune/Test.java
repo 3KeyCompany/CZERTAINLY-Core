@@ -31,7 +31,7 @@ The important modification are marked with the comment "MODIFICATION"
 
 package com.czertainly.core.intune;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import com.czertainly.core.intune.scepvalidation.*;
 
@@ -51,7 +51,7 @@ import org.mockito.ArgumentMatchers;
 
 public class Test 
 {
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestValidationSuccess() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();
@@ -81,7 +81,7 @@ public class Test
                     }}));
     }
 
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestErrorThrows() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();
@@ -125,7 +125,7 @@ public class Test
         assertNotNull(null);
     }
     
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestServiceRoleMismatchThrows() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();
@@ -165,7 +165,7 @@ public class Test
         assertNotNull(null);
     }
     
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestFailedToGetTokenThrows() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();
@@ -207,7 +207,7 @@ public class Test
         assertNotNull(null);
     }
     
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestServiceEndpointNotFound() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();
@@ -252,7 +252,7 @@ public class Test
         assertNotNull(null);
     }
     
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void TestServiceMapClearMockito() throws IntuneScepServiceException, Exception 
     {
         Helper helper = new Helper();

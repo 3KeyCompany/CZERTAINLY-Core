@@ -7,17 +7,23 @@ import com.czertainly.core.dao.entity.workflows.Trigger;
 import com.czertainly.core.util.DtoMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
-import org.hibernate.annotations.WhereJoinTable;
+import lombok.*;
+import org.hibernate.annotations.SQLJoinTableRestriction;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.*;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "discovery_history")
 public class DiscoveryHistory extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<DiscoveryHistoryDetailDto> {
 
+    @Serial
     private static final long serialVersionUID = 571684590427678474L;
 
     @Column(name = "name")
@@ -53,111 +59,18 @@ public class DiscoveryHistory extends UniquelyIdentifiedAndAudited implements Se
 
     @JsonBackReference
     @OneToMany(mappedBy = "discovery", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<DiscoveryCertificate> certificate = new HashSet<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "trigger_association",
-            joinColumns = @JoinColumn(name = "object_uuid", referencedColumnName = "uuid", foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT), insertable = false, updatable = false),
-            inverseJoinColumns = @JoinColumn(name = "trigger_uuid", foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT), insertable = false, updatable = false)
+            joinColumns = @JoinColumn(name = "object_uuid", referencedColumnName = "uuid", insertable = false, updatable = false),
+            inverseJoinColumns = @JoinColumn(name = "trigger_uuid", insertable = false, updatable = false)
     )
-    @WhereJoinTable(clause = "resource = 'DISCOVERY'")
+    @SQLJoinTableRestriction("resource = 'DISCOVERY'")
+    @ToString.Exclude
     private List<Trigger> triggers = new ArrayList<>();
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).append("uuid", uuid)
-                .append("totalCertificatesDiscovered", totalCertificatesDiscovered).toString();
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public DiscoveryStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(DiscoveryStatus status) {
-        this.status = status;
-    }
-
-    public Date getStartTime() {
-        return startTime;
-    }
-
-    public void setStartTime(Date startTime) {
-        this.startTime = startTime;
-    }
-
-    public Date getEndTime() {
-        return endTime;
-    }
-
-    public void setEndTime(Date endTime) {
-        this.endTime = endTime;
-    }
-
-    public Integer getTotalCertificatesDiscovered() {
-        return totalCertificatesDiscovered;
-    }
-
-    public void setTotalCertificatesDiscovered(Integer totalCertificatesDiscovered) {
-        this.totalCertificatesDiscovered = totalCertificatesDiscovered;
-    }
-
-
-    public Set<DiscoveryCertificate> getCertificate() {
-        return certificate;
-    }
-
-    public void setCertificate(Set<DiscoveryCertificate> certificate) {
-        this.certificate = certificate;
-    }
-
-    public UUID getConnectorUuid() {
-        return connectorUuid;
-    }
-
-    public void setConnectorUuid(UUID connectorUuid) {
-        this.connectorUuid = connectorUuid;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public String getConnectorName() {
-		return connectorName;
-	}
-
-	public void setConnectorName(String connectorName) {
-		this.connectorName = connectorName;
-	}
-
-    public String getDiscoveryConnectorReference() {
-        return discoveryConnectorReference;
-    }
-
-    public void setDiscoveryConnectorReference(String discoveryConnectorReference) {
-        this.discoveryConnectorReference = discoveryConnectorReference;
-    }
 
     @Override
     public DiscoveryHistoryDetailDto mapToDto() {
@@ -190,4 +103,19 @@ public class DiscoveryHistory extends UniquelyIdentifiedAndAudited implements Se
         return dto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        DiscoveryHistory that = (DiscoveryHistory) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

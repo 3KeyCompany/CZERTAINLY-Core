@@ -7,18 +7,19 @@ import com.czertainly.api.model.core.cryptography.tokenprofile.TokenProfileDto;
 import com.czertainly.core.service.model.Securable;
 import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
-
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "token_profile")
 public class TokenProfile extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<TokenProfileDto>, Securable, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -34,6 +35,8 @@ public class TokenProfile extends UniquelyIdentifiedAndAudited implements Serial
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "token_instance_ref_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
+    @JsonBackReference
     private TokenInstanceReference tokenInstanceReference;
 
     @Column(name = "token_instance_ref_uuid")
@@ -45,53 +48,9 @@ public class TokenProfile extends UniquelyIdentifiedAndAudited implements Serial
     @Column(name = "usage")
     private String usage;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public String getTokenInstanceName() {
-        return tokenInstanceName;
-    }
-
-    public void setTokenInstanceName(String tokenInstanceName) {
-        this.tokenInstanceName = tokenInstanceName;
-    }
-
-    public TokenInstanceReference getTokenInstanceReference() {
-        return tokenInstanceReference;
-    }
-
     public void setTokenInstanceReference(TokenInstanceReference tokenInstanceReference) {
         this.tokenInstanceReference = tokenInstanceReference;
         if (tokenInstanceReference != null) this.tokenInstanceReferenceUuid = tokenInstanceReference.getUuid();
-    }
-
-    public UUID getTokenInstanceReferenceUuid() {
-        return tokenInstanceReferenceUuid;
-    }
-
-    public void setTokenInstanceReferenceUuid(UUID tokenInstanceReferenceUuid) {
-        this.tokenInstanceReferenceUuid = tokenInstanceReferenceUuid;
-    }
-
-    public Boolean getEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(Boolean enabled) {
-        this.enabled = enabled;
     }
 
     public List<KeyUsage> getUsage() {
@@ -100,35 +59,19 @@ public class TokenProfile extends UniquelyIdentifiedAndAudited implements Serial
                 usage.split(",")
         ).map(
                 i -> KeyUsage.valueOf(
-                        Integer.valueOf(i)
+                        Integer.parseInt(i)
                 )
         ).collect(Collectors.toList());
     }
 
     public void setUsage(List<KeyUsage> usage) {
-        this.usage = String.join(
-                ",",
-                usage.stream().map(
-                        i -> String.valueOf(
-                                i.getBitmask()
-                        )
-                ).collect(
-                        Collectors.toList()
+        this.usage = usage.stream().map(
+                i -> String.valueOf(
+                        i.getBitmask()
                 )
+        ).collect(
+                Collectors.joining(",")
         );
-    }
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("name", name)
-                .append("description", description)
-                .append("tokenInstanceName", tokenInstanceName)
-                .append("tokenInstanceReference", tokenInstanceReference)
-                .append("tokenInstanceReferenceUuid", tokenInstanceReferenceUuid)
-                .append("enabled", enabled)
-                .append("uuid", uuid)
-                .toString();
     }
 
     @Override
@@ -162,5 +105,21 @@ public class TokenProfile extends UniquelyIdentifiedAndAudited implements Serial
     @Override
     public NameAndUuidDto mapToAccessControlObjects() {
         return new NameAndUuidDto(uuid.toString(), name);
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        TokenProfile that = (TokenProfile) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

@@ -306,7 +306,7 @@ public class CertificateServiceImpl implements CertificateService {
 
         if (certificate.getUserUuid() != null) {
             eventProducer.produceCertificateEventMessage(uuid.getValue(), CertificateEvent.DELETE.getCode(), CertificateEventStatus.FAILED.toString(), "Certificate is used by an User", null);
-            throw new ValidationException(String.format("Could not delete certificate %s with UUID %s: Certificate is used by some user.", certificate.getCommonName(), certificate.getUuid().toString()));
+            throw new ValidationException("Could not delete certificate %s with UUID %s: Certificate is used by some user.".formatted(certificate.getCommonName(), certificate.getUuid().toString()));
         }
 
         // remove certificate from Locations
@@ -1603,7 +1603,7 @@ public class CertificateServiceImpl implements CertificateService {
             newOwnerName = newOwner.getName();
         }
 
-        certificateEventHistoryService.addEventHistory(certificate.getUuid(), CertificateEvent.UPDATE_OWNER, CertificateEventStatus.SUCCESS, String.format("%s -> %s", currentOwnerName, newOwnerName == null ? UNDEFINED_CERTIFICATE_OBJECT_NAME : newOwnerName), "");
+        certificateEventHistoryService.addEventHistory(certificate.getUuid(), CertificateEvent.UPDATE_OWNER, CertificateEventStatus.SUCCESS, "%s -> %s".formatted(currentOwnerName, newOwnerName == null ? UNDEFINED_CERTIFICATE_OBJECT_NAME : newOwnerName), "");
     }
 
     private void bulkUpdateRaProfile(SecurityFilter filter, MultipleCertificateObjectUpdateDto request) throws NotFoundException {

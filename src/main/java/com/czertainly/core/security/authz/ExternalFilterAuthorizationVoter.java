@@ -129,8 +129,8 @@ public class ExternalFilterAuthorizationVoter extends AbstractExternalAuthorizat
             return this.opaClient.checkResourceAccess(OpaPolicy.ENDPOINT.policyName, resource, principal, opaDetails);
         } catch (Exception e) {
             logger.error(
-                    String.format(
-                            "An error occurred during the authorization request to the OPA policy '%s'.",
+                    
+                            "An error occurred during the authorization request to the OPA policy '%s'.".formatted(
                             OpaPolicy.ENDPOINT.policyName),
                     e
             );

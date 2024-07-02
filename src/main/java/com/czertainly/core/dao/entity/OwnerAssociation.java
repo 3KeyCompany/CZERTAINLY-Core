@@ -1,19 +1,24 @@
 package com.czertainly.core.dao.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "owner_association")
 public class OwnerAssociation extends ResourceObjectAssociation {
+    
     @Column(name = "owner_uuid", nullable = false)
     private UUID ownerUuid;
 
@@ -21,13 +26,18 @@ public class OwnerAssociation extends ResourceObjectAssociation {
     private String ownerUsername;
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("resource", getResource())
-                .append("objectUuid", getObjectUuid())
-                .append("ownerUuid", ownerUuid)
-                .append("ownerUsername", ownerUsername)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        OwnerAssociation that = (OwnerAssociation) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

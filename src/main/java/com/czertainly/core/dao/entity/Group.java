@@ -7,17 +7,22 @@ import com.czertainly.core.util.ObjectAccessControlMapper;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.io.Serial;
 import java.io.Serializable;
+import java.util.Objects;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "\"group\"")
 public class Group extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<GroupDto>, ObjectAccessControlMapper<NameAndUuidDto> {
 
+    @Serial
     private static final long serialVersionUID = 6407781756692461875L;
 
     @Column(name = "name")
@@ -28,30 +33,6 @@ public class Group extends UniquelyIdentifiedAndAudited implements Serializable,
 
     @Column(name = "email")
     protected String email;
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
 
     @Override
     public GroupDto mapToDto() {
@@ -69,25 +50,18 @@ public class Group extends UniquelyIdentifiedAndAudited implements Serializable,
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("name", name)
-                .append("description", description)
-                .append("email", email)
-                .append("uuid", uuid)
-                .toString();
-    }
-
-    @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        Group that = (Group) o;
-        return new EqualsBuilder().append(uuid, that.uuid).isEquals();
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Group group = (Group) o;
+        return getUuid() != null && Objects.equals(getUuid(), group.getUuid());
     }
 
     @Override
-    public int hashCode() {
-        return new HashCodeBuilder(17, 37).append(uuid).toHashCode();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

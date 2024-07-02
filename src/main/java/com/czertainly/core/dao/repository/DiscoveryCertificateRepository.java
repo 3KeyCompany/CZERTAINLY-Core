@@ -24,5 +24,4 @@ public interface DiscoveryCertificateRepository extends SecurityFilterRepository
     long countByDiscoveryAndNewlyDiscovered(DiscoveryHistory history, boolean newlyDiscovered);
 	List<DiscoveryCertificate> findByCertificateContent(CertificateContent certificateContent);
 
-    List<DiscoveryCertificate> findByDiscoveryUuid(UUID uuid);
 }

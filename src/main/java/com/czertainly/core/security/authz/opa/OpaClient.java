@@ -41,8 +41,8 @@ public class OpaClient {
 
     private <T> T sendRequest(String policyName, OpaRequestedResource resource, String principal, OpaRequestDetails details, ParameterizedType type) throws AccessDeniedException {
         logger.trace(
-                String.format(
-                        "Going to call OPA policy '%s' with %s and %s.",
+                
+                        "Going to call OPA policy '%s' with %s and %s.".formatted(
                         policyName,
                         resource.toString(),
                         details != null ? details.toString() : "no additional details"

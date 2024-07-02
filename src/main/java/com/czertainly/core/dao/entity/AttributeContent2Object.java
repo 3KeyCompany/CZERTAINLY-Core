@@ -2,21 +2,23 @@ package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.core.auth.Resource;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "attribute_content_2_object")
 public class AttributeContent2Object extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Connector connector;
 
     @Column(name = "connector_uuid")
@@ -24,6 +26,7 @@ public class AttributeContent2Object extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "attribute_content_item_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private AttributeContentItem attributeContentItem;
 
     @Column(name = "attribute_content_item_uuid", nullable = false)
@@ -60,17 +63,18 @@ public class AttributeContent2Object extends UniquelyIdentified {
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("connectorUuid", connectorUuid)
-                .append("attributeContentItemUuid", attributeContentItemUuid)
-                .append("objectType", objectType)
-                .append("objectUuid", objectUuid)
-                .append("sourceObjectType", sourceObjectType)
-                .append("sourceObjectUuid", sourceObjectUuid)
-                .append("sourceObjectName", sourceObjectName)
-                .append("order", order)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AttributeContent2Object that = (AttributeContent2Object) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

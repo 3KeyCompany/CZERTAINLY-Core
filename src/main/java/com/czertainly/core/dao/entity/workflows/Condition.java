@@ -2,21 +2,24 @@
 package com.czertainly.core.dao.entity.workflows;
 
 import com.czertainly.api.model.core.auth.Resource;
-import com.czertainly.api.model.core.workflows.ConditionType;
 import com.czertainly.api.model.core.workflows.ConditionDto;
+import com.czertainly.api.model.core.workflows.ConditionType;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
-@Entity
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
+@Entity
 @Table(name = "condition")
 public class Condition extends UniquelyIdentified {
 
@@ -35,16 +38,18 @@ public class Condition extends UniquelyIdentified {
     private Resource resource;
 
     @OneToMany(mappedBy = "condition", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @ToString.Exclude
     private List<ConditionItem> items;
 
     @JsonBackReference
     @ManyToMany(mappedBy = "conditions", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<Rule> rules = new HashSet<>();
 
     public ConditionDto mapToDto() {
         ConditionDto conditionDto = new ConditionDto();
-        conditionDto.setUuid(uuid.toString());
         conditionDto.setName(name);
+        conditionDto.setUuid(uuid.toString());
         conditionDto.setDescription(description);
         conditionDto.setType(type);
         conditionDto.setResource(resource);
@@ -53,4 +58,19 @@ public class Condition extends UniquelyIdentified {
         return conditionDto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Condition condition = (Condition) o;
+        return getUuid() != null && Objects.equals(getUuid(), condition.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

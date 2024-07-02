@@ -9,11 +9,12 @@ import com.czertainly.core.util.AttributeDefinitionUtils;
 import com.czertainly.core.util.DtoMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -22,6 +23,10 @@ import java.util.UUID;
  * provider, and are stored in the core. They are then used to map the rules for profiles. These rules are also tagged with the
  * group, if they belong to one.
  */
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "compliance_rule")
 public class ComplianceRule extends UniquelyIdentified implements Serializable, DtoMapper<ComplianceRulesDto> {
@@ -47,6 +52,7 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private Connector connector;
 
     @Column(name = "connector_uuid", nullable = false)
@@ -54,6 +60,7 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
 
     @ManyToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JoinColumn(name = "group_uuid")
+    @ToString.Exclude
     private ComplianceGroup group;
 
     @Column(name = "group_uuid", insertable = false, updatable = false)
@@ -61,6 +68,7 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
 
     @JsonBackReference
     @OneToMany(mappedBy = "complianceRule", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<ComplianceProfileRule> rules;
 
     @Override
@@ -87,37 +95,6 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
         return dto;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("attributes", attributes)
-                .append("certificateType", certificateType)
-                .append("description", description)
-                .append("kind", kind)
-                .append("complianceRule", rules)
-                .append("certificateType", certificateType)
-                .append("decommissioned", decommissioned)
-                .toString();
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
     public List<BaseAttribute> getAttributes() {
         return AttributeDefinitionUtils.deserialize(attributes, BaseAttribute.class);
     }
@@ -126,33 +103,9 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
         this.attributes = AttributeDefinitionUtils.serialize(attributes);
     }
 
-    public Connector getConnector() {
-        return connector;
-    }
-
     public void setConnector(Connector connector) {
         this.connector = connector;
         this.connectorUuid = connector.getUuid();
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public CertificateType getCertificateType() {
-        return certificateType;
-    }
-
-    public void setCertificateType(CertificateType certificateType) {
-        this.certificateType = certificateType;
-    }
-
-    public ComplianceGroup getGroup() {
-        return group;
     }
 
     public void setGroup(ComplianceGroup group) {
@@ -161,43 +114,27 @@ public class ComplianceRule extends UniquelyIdentified implements Serializable, 
         else this.groupUuid = null;
     }
 
-    public Set<ComplianceProfileRule> getRules() {
-        return rules;
-    }
-
-    public void setRules(Set<ComplianceProfileRule> rules) {
-        this.rules = rules;
-    }
-
-    public Boolean getDecommissioned() {
-        return decommissioned;
-    }
-
-    public void setDecommissioned(Boolean decommissioned) {
-        this.decommissioned = decommissioned;
-    }
-
-    public UUID getConnectorUuid() {
-        return connectorUuid;
-    }
-
-    public void setConnectorUuid(UUID connectorUuid) {
-        this.connectorUuid = connectorUuid;
-    }
-
-    public void setConnectorUuid(String connectorUuid) {
+    public void setConnectorUuidFromString(String connectorUuid) {
         this.connectorUuid = UUID.fromString(connectorUuid);
     }
 
-    public UUID getGroupUuid() {
-        return groupUuid;
-    }
-
-    public void setGroupUuid(String groupUuid) {
+    public void setGroupUuidFromString(String groupUuid) {
         this.groupUuid = UUID.fromString(groupUuid);
     }
 
-    public void setGroupUuid(UUID groupUuid) {
-        this.groupUuid = groupUuid;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ComplianceRule that = (ComplianceRule) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

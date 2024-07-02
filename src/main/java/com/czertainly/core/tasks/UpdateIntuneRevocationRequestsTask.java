@@ -127,7 +127,7 @@ public class UpdateIntuneRevocationRequestsTask extends SchedulerJobProcessor {
                 logger.error(MarkerFactory.getMarker("scheduleInfo"), "Error uploading revocation results", e);
             }
         }
-        return new ScheduledTaskResult(SchedulerJobExecutionStatus.SUCCESS, String.format("Processed Intune revocation requests for %d SCEP profiles", scepProfiles.size()));
+        return new ScheduledTaskResult(SchedulerJobExecutionStatus.SUCCESS, "Processed Intune revocation requests for %d SCEP profiles".formatted(scepProfiles.size()));
     }
 
     private List<CARevocationRequest> downloadRevocationRequests(IntuneRevocationClient intuneRevocationClient) throws Exception {

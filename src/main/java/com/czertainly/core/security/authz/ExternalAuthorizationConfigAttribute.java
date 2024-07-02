@@ -14,7 +14,7 @@ public class ExternalAuthorizationConfigAttribute implements ConfigAttribute {
 
     @Override
     public String getAttribute() {
-        return String.format("%s=%s", this.attributeName, this.attributeValue);
+        return "%s=%s".formatted(this.attributeName, this.attributeValue);
     }
 
     public String getAttributeName() {

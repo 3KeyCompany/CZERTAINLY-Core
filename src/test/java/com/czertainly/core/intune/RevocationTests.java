@@ -30,7 +30,7 @@ The important modification are marked with the comment "MODIFICATION"
 */
 package com.czertainly.core.intune;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import com.czertainly.core.intune.scepvalidation.*;
 
@@ -48,7 +48,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import org.apache.http.client.methods.HttpUriRequest;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatcher;
 import org.mockito.ArgumentMatchers;
 import com.czertainly.core.intune.carequest.CARequestErrorCodes;
@@ -117,7 +117,7 @@ public class RevocationTests {
         assertEquals("caConfig2", results.get(1).caConfiguration);
     }
 
-    @org.junit.Test
+    @org.junit.jupiter.api.Test
     public void UploadRevocationResults_Success() throws Exception {
         Helper helper = new Helper();
 

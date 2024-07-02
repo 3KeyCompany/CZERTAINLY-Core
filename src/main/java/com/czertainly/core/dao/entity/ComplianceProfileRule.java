@@ -8,11 +8,12 @@ import com.czertainly.api.model.core.compliance.ComplianceRulesDto;
 import com.czertainly.core.util.AttributeDefinitionUtils;
 import com.czertainly.core.util.DtoMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -21,12 +22,17 @@ import java.util.UUID;
  * profile. This entity frames the relation with the Compliance Profile and the Compliance Rules discovered from the
  * connector. In addition to that, it also stores the attributes needed for the rule
  */
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "compliance_profile_rule")
 public class ComplianceProfileRule extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<ComplianceProfileRuleDto> {
 
     @ManyToOne(cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
     @JoinColumn(name = "rule_uuid")
+    @ToString.Exclude
     private ComplianceRule complianceRule;
 
     @Column(name = "rule_uuid", insertable = false, updatable = false)
@@ -37,6 +43,7 @@ public class ComplianceProfileRule extends UniquelyIdentifiedAndAudited implemen
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "compliance_profile_uuid")
+    @ToString.Exclude
     private ComplianceProfile complianceProfile;
 
     @Column(name = "compliance_profile_uuid", insertable = false, updatable = false)
@@ -67,36 +74,10 @@ public class ComplianceProfileRule extends UniquelyIdentifiedAndAudited implemen
         return dto;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("rule", complianceRule)
-                .append("uuid", uuid)
-                .append("attributes", attributes)
-                .append("complianceProfile", complianceProfile)
-                .toString();
-    }
-
-    public ComplianceRule getComplianceRule() {
-        return complianceRule;
-    }
-
     public void setComplianceRule(ComplianceRule complianceRule) {
         this.complianceRule = complianceRule;
         if (complianceRule != null) this.complianceRuleUuid = complianceRule.getUuid();
         else this.complianceRuleUuid = null;
-    }
-
-    public UUID getComplianceRuleUuid() {
-        return complianceRuleUuid;
-    }
-
-    public void setComplianceRuleUuid(String complianceRuleUuid) {
-        this.complianceRuleUuid = UUID.fromString(complianceRuleUuid);
-    }
-
-    public void setComplianceRuleUuid(UUID complianceRuleUuid) {
-        this.complianceRuleUuid = complianceRuleUuid;
     }
 
     public List<RequestAttributeDto> getAttributes() {
@@ -112,23 +93,19 @@ public class ComplianceProfileRule extends UniquelyIdentifiedAndAudited implemen
         return AttributeDefinitionUtils.mergeAttributes(fullAttribute, AttributeDefinitionUtils.deserializeRequestAttributes(attributes));
     }
 
-    public ComplianceProfile getComplianceProfile() {
-        return complianceProfile;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ComplianceProfileRule that = (ComplianceProfileRule) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setComplianceProfile(ComplianceProfile complianceProfile) {
-        this.complianceProfile = complianceProfile;
-    }
-
-    public UUID getComplianceProfileUuid() {
-        return complianceProfileUuid;
-    }
-
-    public void setComplianceProfileUuid(String complianceProfileUuid) {
-        this.complianceProfileUuid = UUID.fromString(complianceProfileUuid);
-    }
-
-    public void setComplianceProfileUuid(UUID complianceProfileUuid) {
-        this.complianceProfileUuid = complianceProfileUuid;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

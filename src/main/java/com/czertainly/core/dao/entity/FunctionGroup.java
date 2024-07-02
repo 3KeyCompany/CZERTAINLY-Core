@@ -3,18 +3,27 @@ package com.czertainly.core.dao.entity;
 import com.czertainly.api.model.core.connector.FunctionGroupCode;
 import com.czertainly.api.model.core.connector.FunctionGroupDto;
 import com.czertainly.core.util.DtoMapper;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "function_group")
 public class FunctionGroup extends UniquelyIdentified implements Serializable, DtoMapper<FunctionGroupDto> {
+
+    @Serial
     private static final long serialVersionUID = 463898767718879135L;
 
     @Column(name = "name")
@@ -25,34 +34,14 @@ public class FunctionGroup extends UniquelyIdentified implements Serializable, D
     private FunctionGroupCode code;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "functionGroup")
+    @ToString.Exclude
+    @JsonManagedReference
     private Set<Endpoint> endpoints = new HashSet<>();
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "functionGroup")
+    @ToString.Exclude
+    @JsonManagedReference
     private Set<Connector2FunctionGroup> connectors = new HashSet<>();
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public FunctionGroupCode getCode() {
-        return code;
-    }
-
-    public void setCode(FunctionGroupCode code) {
-        this.code = code;
-    }
-
-    public Set<Endpoint> getEndpoints() {
-        return endpoints;
-    }
-
-    public void setEndpoints(Set<Endpoint> endpoints) {
-        this.endpoints = endpoints;
-    }
 
     @Override
     public FunctionGroupDto mapToDto() {
@@ -68,27 +57,18 @@ public class FunctionGroup extends UniquelyIdentified implements Serializable, D
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("code", code)
-                .append("endpoints", endpoints)
-                .toString();
-    }
-
-    @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
         FunctionGroup that = (FunctionGroup) o;
-
-        return uuid.equals(that.uuid);
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
     @Override
-    public int hashCode() {
-        return uuid.hashCode();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

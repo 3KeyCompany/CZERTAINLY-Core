@@ -3,7 +3,6 @@ package com.czertainly.core.dao.repository;
 import com.czertainly.core.dao.entity.ScheduledJobHistory;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.UUID;
 
 @Repository

@@ -1,17 +1,19 @@
 package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.client.cryptography.key.KeyCompromiseReason;
-import com.czertainly.api.model.common.NameAndUuidDto;
 import com.czertainly.api.model.common.enums.cryptography.KeyAlgorithm;
 import com.czertainly.api.model.common.enums.cryptography.KeyFormat;
 import com.czertainly.api.model.common.enums.cryptography.KeyType;
 import com.czertainly.api.model.connector.cryptography.key.value.KeyValue;
-import com.czertainly.api.model.core.cryptography.key.*;
+import com.czertainly.api.model.core.cryptography.key.KeyItemDetailDto;
+import com.czertainly.api.model.core.cryptography.key.KeyItemDto;
+import com.czertainly.api.model.core.cryptography.key.KeyState;
+import com.czertainly.api.model.core.cryptography.key.KeyUsage;
 import com.czertainly.core.util.CryptographicHelper;
 import com.czertainly.core.util.DtoMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -21,6 +23,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "cryptographic_key_item")
 @EntityListeners(AuditingEntityListener.class)
@@ -32,6 +38,7 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Serializ
     // TODO: change name of the column to key_uuid
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cryptographic_key_uuid", insertable = false, updatable = false, nullable = false)
+    @ToString.Exclude
     private CryptographicKey cryptographicKey;
 
     // TODO: change name of the column to key_uuid
@@ -85,97 +92,13 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Serializ
     @LastModifiedDate
     protected LocalDateTime updatedAt;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public CryptographicKey getCryptographicKey() {
-        return cryptographicKey;
-    }
-
     public void setCryptographicKey(CryptographicKey cryptographicKey) {
         this.cryptographicKey = cryptographicKey;
         if (cryptographicKey != null) this.cryptographicKeyUuid = cryptographicKey.getUuid();
     }
 
-    public UUID getCryptographicKeyUuid() {
-        return cryptographicKeyUuid;
-    }
-
-    public void setCryptographicKeyUuid(UUID cryptographicKeyUuid) {
-        this.cryptographicKeyUuid = cryptographicKeyUuid;
-    }
-
-    public KeyType getType() {
-        return type;
-    }
-
-    public void setType(KeyType type) {
-        this.type = type;
-    }
-
-    public KeyAlgorithm getKeyAlgorithm() {
-        return keyAlgorithm;
-    }
-
-    public void setKeyAlgorithm(KeyAlgorithm keyAlgorithm) {
-        this.keyAlgorithm = keyAlgorithm;
-    }
-
-    public KeyFormat getFormat() {
-        return format;
-    }
-
-    public void setFormat(KeyFormat format) {
-        this.format = format;
-    }
-
-    public String getKeyData() {
-        return keyData;
-    }
-
-    public void setKeyData(String keyData) {
-        this.keyData = keyData;
-    }
-
     public void setKeyData(KeyFormat keyFormat, KeyValue value) {
         this.keyData = CryptographicHelper.serializeKeyValue(keyFormat, value);
-    }
-
-    public int getLength() {
-        return length;
-    }
-
-    public void setLength(int length) {
-        this.length = length;
-    }
-
-    public UUID getKeyReferenceUuid() {
-        return keyReferenceUuid;
-    }
-
-    public void setKeyReferenceUuid(UUID keyReferenceUuid) {
-        this.keyReferenceUuid = keyReferenceUuid;
-    }
-
-    public KeyState getState() {
-        return state;
-    }
-
-    public void setState(KeyState state) {
-        this.state = state;
-    }
-
-    public KeyCompromiseReason getReason() {
-        return reason;
-    }
-
-    public void setReason(KeyCompromiseReason reason) {
-        this.reason = reason;
     }
 
     public List<KeyUsage> getUsage() {
@@ -184,75 +107,26 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Serializ
                 usage.split(",")
         ).map(
                 i -> KeyUsage.valueOf(
-                        Integer.valueOf(i)
+                        Integer.parseInt(i)
                 )
         ).collect(Collectors.toList());
     }
 
     public void setUsage(List<KeyUsage> usage) {
-        if (usage == null || usage.size() == 0) {
+        if (usage == null || usage.isEmpty()) {
             this.usage = null;
             return;
         }
 
-        this.usage = String.join(
-                ",",
-                usage.stream().map(
-                        i -> String.valueOf(
-                                i.getBitmask()
-                        )
-                ).collect(
-                        Collectors.toList()
+        this.usage = usage.stream().map(
+                i -> String.valueOf(
+                        i.getBitmask()
                 )
+        ).collect(
+                Collectors.joining(",")
         );
     }
 
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    public String getFingerprint() {
-        return fingerprint;
-    }
-
-    public void setFingerprint(String fingerprint) {
-        this.fingerprint = fingerprint;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("name", name)
-                .append("cryptographicKey", cryptographicKey)
-                .append("cryptographicKeyUuid", cryptographicKeyUuid)
-                .append("type", type)
-                .append("keyAlgorithm", keyAlgorithm)
-                .append("format", format)
-                .append("length", length)
-                .append("keyReferenceUuid", keyReferenceUuid)
-                .append("uuid", uuid)
-                .toString();
-    }
 
     @Override
     public KeyItemDetailDto mapToDto() {
@@ -302,5 +176,21 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Serializ
             dto.setTokenProfileUuid(cryptographicKey.getTokenProfile().getUuid().toString());
         }
         return dto;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        CryptographicKeyItem that = (CryptographicKeyItem) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

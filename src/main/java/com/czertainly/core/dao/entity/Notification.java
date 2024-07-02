@@ -2,29 +2,20 @@ package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.client.notification.NotificationDto;
 import com.czertainly.api.model.core.auth.Resource;
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.Table;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
-@Entity
-@Table(name = "notification")
-@NoArgsConstructor
 @Setter
 @Getter
+@ToString
+@RequiredArgsConstructor
+@Entity
+@Table(name = "notification")
 public class Notification extends UniquelyIdentified {
+
     @Column(name = "message", nullable = false)
     private String message;
 
@@ -42,6 +33,7 @@ public class Notification extends UniquelyIdentified {
     private String targetObjectIdentification;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "notification", cascade = CascadeType.ALL, orphanRemoval = true)
+    @ToString.Exclude
     private Set<NotificationRecipient> notificationRecipients;
 
     public NotificationDto mapToDto() {
@@ -58,5 +50,21 @@ public class Notification extends UniquelyIdentified {
         }
         notificationRecipient.ifPresent(recipient -> dto.setReadAt(recipient.getReadAt()));
         return dto;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Notification that = (Notification) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

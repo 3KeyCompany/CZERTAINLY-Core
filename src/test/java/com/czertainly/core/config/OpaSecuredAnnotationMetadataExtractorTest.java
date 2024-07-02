@@ -60,7 +60,7 @@ class OpaSecuredAnnotationMetadataExtractorTest {
                 .anyMatch(a -> Objects.equals(a.getAttributeName(), attributeName) && Objects.equals(a.getAttributeValue(), attributeValue));
         if (!isAttributePresent) {
             throw new AssertionFailedError(
-                    String.format("Config attribute '%s=%s' not found.", attributeName, attributeValue)
+                    "Config attribute '%s=%s' not found.".formatted(attributeName, attributeValue)
             );
         }
     }
@@ -71,7 +71,7 @@ class OpaSecuredAnnotationMetadataExtractorTest {
                 .anyMatch(a -> Objects.equals(a.getAttributeName(), attributeName));
         if (isAttributePresent) {
             throw new AssertionFailedError(
-                    String.format("Config attribute '%s' should not be present in collection.", attributeName)
+                    "Config attribute '%s' should not be present in collection.".formatted(attributeName)
             );
         }
     }

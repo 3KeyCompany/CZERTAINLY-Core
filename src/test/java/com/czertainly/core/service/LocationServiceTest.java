@@ -72,7 +72,6 @@ public class LocationServiceTest extends BaseSpringBootTest {
         this.attributeEngine = attributeEngine;
     }
 
-
     @BeforeEach
     public void setUp() throws NotFoundException, AttributeException {
         mockServer = new WireMockServer(0);
@@ -111,20 +110,31 @@ public class LocationServiceTest extends BaseSpringBootTest {
         locationNoMultiEntries = createLocationNoMultiEntries();
         locationNoKeyManagement = createLocationNoKeyManagement();
 
-        Set<CertificateLocation> cls = new HashSet<>();
-        CertificateLocation certificateLocation = new CertificateLocation();
-        certificateLocation.setWithKey(true);
-        certificateLocation.setCertificate(certificate);
-        certificateLocation.setLocation(location);
-        cls.add(certificateLocation);
+        // Use distinct instances of CertificateLocation
+        CertificateLocation certificateLocation1 = new CertificateLocation();
+        certificateLocation1.setWithKey(true);
+        certificateLocation1.setCertificate(certificate);
+        certificateLocation1.setLocation(location);
 
-        location.getCertificates().addAll(cls);
-        locationNoMultiEntries.getCertificates().addAll(cls);
-        locationNoKeyManagement.getCertificates().addAll(cls);
+        CertificateLocation certificateLocation2 = new CertificateLocation();
+        certificateLocation2.setWithKey(true);
+        certificateLocation2.setCertificate(certificate);
+        certificateLocation2.setLocation(locationNoMultiEntries);
+
+        CertificateLocation certificateLocation3 = new CertificateLocation();
+        certificateLocation3.setWithKey(true);
+        certificateLocation3.setCertificate(certificate);
+        certificateLocation3.setLocation(locationNoKeyManagement);
+
+        location.getCertificates().add(certificateLocation1);
+        locationNoMultiEntries.getCertificates().add(certificateLocation2);
+        locationNoKeyManagement.getCertificates().add(certificateLocation3);
+
         location = locationRepository.save(location);
         locationNoMultiEntries = locationRepository.save(locationNoMultiEntries);
         locationNoKeyManagement = locationRepository.save(locationNoKeyManagement);
     }
+
 
     private void prepareDataAttributesDefinitions() throws AttributeException {
         testAttribute = new DataAttribute();
@@ -238,11 +248,12 @@ public class LocationServiceTest extends BaseSpringBootTest {
                 .willReturn(WireMock.okJson("true")));
         mockServer.stubFor(WireMock
                 .post(WireMock.urlPathMatching("/v1/entityProvider/entities/[^/]+/locations"))
-                .willReturn(WireMock.okJson("{\n" +
-                        "  \"certificates\": [],\n" +
-                        "  \"multipleEntries\": true,\n" +
-                        "  \"supportKeyManagement\": true\n" +
-                        "}")));
+                .willReturn(WireMock.okJson("""
+                        {
+                          "certificates": [],
+                          "multipleEntries": true,
+                          "supportKeyManagement": true
+                        }""")));
 
         AddLocationRequestDto request = new AddLocationRequestDto();
         request.setName("testLocation2");
@@ -294,11 +305,12 @@ public class LocationServiceTest extends BaseSpringBootTest {
                 .willReturn(WireMock.okJson("true")));
         mockServer.stubFor(WireMock
                 .post(WireMock.urlPathMatching("/v1/entityProvider/entities/[^/]+/locations"))
-                .willReturn(WireMock.okJson("{\n" +
-                        "  \"certificates\": [],\n" +
-                        "  \"multipleEntries\": true,\n" +
-                        "  \"supportKeyManagement\": true\n" +
-                        "}")));
+                .willReturn(WireMock.okJson("""
+                        {
+                          "certificates": [],
+                          "multipleEntries": true,
+                          "supportKeyManagement": true
+                        }""")));
 
         EditLocationRequestDto request = new EditLocationRequestDto();
         request.setDescription("some description");

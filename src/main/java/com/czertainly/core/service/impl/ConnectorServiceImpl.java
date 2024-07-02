@@ -319,7 +319,7 @@ public class ConnectorServiceImpl implements ConnectorService {
 
     private void removeFunctionGroupFromConnector(FunctionGroup functionGroup, Connector connector) throws NotFoundException {
         Connector2FunctionGroup c2fg = connector2FunctionGroupRepository.findByConnectorAndFunctionGroup(connector, functionGroup)
-                .orElseThrow(() -> new NotFoundException(Connector2FunctionGroup.class, String.format("connector=%s, functionGroup=%s", connector.getName(), functionGroup.getName())));
+                .orElseThrow(() -> new NotFoundException(Connector2FunctionGroup.class, "connector=%s, functionGroup=%s".formatted(connector.getName(), functionGroup.getName())));
 
         connector2FunctionGroupRepository.delete(c2fg);
 

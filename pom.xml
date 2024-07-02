@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.czertainly</groupId>
         <artifactId>dependencies</artifactId>
-        <version>1.1.0</version>
+        <version>1.1.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>core</artifactId>
@@ -14,11 +14,13 @@
     <name>CZERTAINLY-Core</name>
 
     <properties>
-        <querydsl.version>5.0.0</querydsl.version>
-        <hsqldb.version>2.7.1</hsqldb.version>
-        <nimbus-jose-jwt.version>9.37</nimbus-jose-jwt.version>
-        <okhttp.version>4.11.0</okhttp.version>
-        <mockwebserver.version>4.11.0</mockwebserver.version>
+        <querydsl.version>5.1.0</querydsl.version>
+        <hsqldb.version>2.7.3</hsqldb.version>
+        <nimbus-jose-jwt.version>9.40</nimbus-jose-jwt.version>
+        <okhttp.version>4.12.0</okhttp.version>
+        <mockwebserver.version>4.12.0</mockwebserver.version>
+        <commons-beanutils.version>1.9.4</commons-beanutils.version>
+        <testcontainers-postgresql.version>1.19.8</testcontainers-postgresql.version>
         <sonar.projectKey>3KeyCompany_CZERTAINLY-Core</sonar.projectKey>
     </properties>
 
@@ -116,6 +118,11 @@
             <artifactId>flyway-core</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <!-- DB -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -148,7 +155,7 @@
         <dependency>
             <groupId>commons-beanutils</groupId>
             <artifactId>commons-beanutils</artifactId>
-            <version>1.9.4</version>
+            <version>${commons-beanutils.version}</version>
         </dependency>
 
         <!-- Tests -->
@@ -156,15 +163,9 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.junit.vintage</groupId>
-                    <artifactId>junit-vintage-engine</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.github.tomakehurst</groupId>
+            <groupId>org.wiremock</groupId>
             <artifactId>wiremock-standalone</artifactId>
             <scope>test</scope>
         </dependency>
@@ -184,6 +185,12 @@
             <artifactId>mockwebserver</artifactId>
             <version>${mockwebserver.version}</version>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>junit</groupId>
+                    <artifactId>junit</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.google.code.gson</groupId>
@@ -192,7 +199,7 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
-            <version>1.19.2</version>
+            <version>${testcontainers-postgresql.version}</version>
             <scope>test</scope>
         </dependency>
 
@@ -212,6 +219,17 @@
             <artifactId>httpclient</artifactId>
             <version>4.5.14</version>
         </dependency>
+
+        <!-- this dependency is included to avoid warning -->
+        <!-- Compilation warning: "unknown enum constant When.MAYBE" -->
+        <!-- Caused by @Nullable annotations -->
+        <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+            <version>3.0.2</version>
+            <scope>provided</scope>
+        </dependency>
+
     </dependencies>
 
     <build>

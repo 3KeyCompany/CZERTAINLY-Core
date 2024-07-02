@@ -5,16 +5,22 @@ import com.czertainly.api.model.core.notification.NotificationInstanceDto;
 import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "notification_instance_reference")
 public class NotificationInstanceReference extends UniquelyIdentified implements Serializable, DtoMapper<NotificationInstanceDto>, ObjectAccessControlMapper<NameAndUuidDto> {
+
     @Column(name = "notification_instance_uuid")
     private UUID notificationInstanceUuid;
 
@@ -29,6 +35,7 @@ public class NotificationInstanceReference extends UniquelyIdentified implements
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Connector connector;
 
     @Column(name = "connector_uuid")
@@ -38,72 +45,13 @@ public class NotificationInstanceReference extends UniquelyIdentified implements
     private String connectorName;
 
     @OneToMany(mappedBy = "notificationInstanceReference", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @ToString.Exclude
     private List<NotificationInstanceMappedAttributes> mappedAttributes;
-
-    public UUID getNotificationInstanceUuid() {
-        return notificationInstanceUuid;
-    }
-
-    public void setNotificationInstanceUuid(UUID notificationInstanceUuid) {
-        this.notificationInstanceUuid = notificationInstanceUuid;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public Connector getConnector() {
-        return connector;
-    }
 
     public void setConnector(Connector connector) {
         this.connector = connector;
         if (connector != null) this.connectorUuid = connector.getUuid();
         else this.connectorUuid = null;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
-    public String getConnectorName() {
-        return connectorName;
-    }
-
-    public void setConnectorName(String connectorName) {
-        this.connectorName = connectorName;
-    }
-
-    public UUID getConnectorUuid() {
-        return connectorUuid;
-    }
-
-    public void setConnectorUuid(UUID connectorUuid) {
-        this.connectorUuid = connectorUuid;
-    }
-
-    public List<NotificationInstanceMappedAttributes> getMappedAttributes() {
-        return mappedAttributes;
-    }
-
-    public void setMappedAttributes(List<NotificationInstanceMappedAttributes> mappedAttributes) {
-        this.mappedAttributes = mappedAttributes;
     }
 
     @Override
@@ -126,13 +74,18 @@ public class NotificationInstanceReference extends UniquelyIdentified implements
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).append("uuid", uuid)
-                .append("notificationInstanceUuid", notificationInstanceUuid)
-                .append("name", name)
-                .append("description", description)
-                .append("kind", kind)
-                .append("connectorName", connectorName)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        NotificationInstanceReference that = (NotificationInstanceReference) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

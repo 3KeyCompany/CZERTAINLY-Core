@@ -46,7 +46,7 @@ class CzertainlyAuthenticationClientTest {
         authServiceMock = new MockWebServer();
         authServiceMock.start();
 
-        String authServiceBaseUrl = String.format("http://%s:%d", authServiceMock.getHostName(), authServiceMock.getPort());
+        String authServiceBaseUrl = "http://%s:%d".formatted(authServiceMock.getHostName(), authServiceMock.getPort());
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         czertainlyAuthenticationClient = new CzertainlyAuthenticationClient(objectMapper, authServiceBaseUrl);

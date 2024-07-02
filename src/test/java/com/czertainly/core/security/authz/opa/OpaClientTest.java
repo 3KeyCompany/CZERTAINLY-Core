@@ -38,7 +38,7 @@ class OpaClientTest {
         opaMock = new MockWebServer();
         opaMock.start();
 
-        String opaBaseUrl = String.format("http://%s:%d", opaMock.getHostName(), opaMock.getPort());
+        String opaBaseUrl = "http://%s:%d".formatted(opaMock.getHostName(), opaMock.getPort());
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         opaClient = new OpaClient(objectMapper, opaBaseUrl);

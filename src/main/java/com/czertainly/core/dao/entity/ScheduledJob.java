@@ -4,18 +4,21 @@ import com.czertainly.api.model.core.scheduler.ScheduledJobDetailDto;
 import com.czertainly.api.model.core.scheduler.ScheduledJobDto;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import jakarta.persistence.Table;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.type.SqlTypes;
 
+import java.util.Objects;
 import java.util.UUID;
 
-@Entity
 @Getter
 @Setter
-@NoArgsConstructor
+@ToString
+@RequiredArgsConstructor
+@Entity
+@Table(name = "scheduled_job")
 public class ScheduledJob extends UniquelyIdentified{
 
     @Column(name = "job_name")
@@ -78,4 +81,19 @@ public class ScheduledJob extends UniquelyIdentified{
         return this.jobClassName.lastIndexOf(".") == -1 ? this.jobClassName : this.jobClassName.substring(this.jobClassName.lastIndexOf(".") + 1);
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ScheduledJob that = (ScheduledJob) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

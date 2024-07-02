@@ -111,7 +111,7 @@ public abstract class SchedulerJobProcessor {
         final ScheduledJob scheduledJob = scheduledJobsRepository.findByJobName(jobName);
         if (scheduledJob == null) {
             logger.error("There is no such job {} registered.", jobName);
-            throw new NotFoundException(String.format("Scheduled job with name %s not found.", jobName));
+            throw new NotFoundException("Scheduled job with name %s not found.".formatted(jobName));
         }
 
         final ScheduledJobHistory scheduledJobHistory = new ScheduledJobHistory();

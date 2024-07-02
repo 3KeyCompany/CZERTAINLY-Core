@@ -4,9 +4,16 @@ import com.czertainly.core.dao.entity.Certificate;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "scep_transaction")
 public class ScepTransaction extends UniquelyIdentified {
@@ -17,6 +24,7 @@ public class ScepTransaction extends UniquelyIdentified {
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "certificate_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Certificate certificate;
 
     @Column(name = "certificate_uuid")
@@ -25,38 +33,15 @@ public class ScepTransaction extends UniquelyIdentified {
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "scep_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private ScepProfile scepProfile;
 
     @Column(name = "scep_profile_uuid")
     private UUID scepProfileUuid;
 
-    public String getTransactionId() {
-        return transactionId;
-    }
-
-    public void setTransactionId(String transactionId) {
-        this.transactionId = transactionId;
-    }
-
-    public Certificate getCertificate() {
-        return certificate;
-    }
-
     public void setCertificate(Certificate certificate) {
         this.certificate = certificate;
         if(certificate != null) certificateUuid = certificate.getUuid();
-    }
-
-    public UUID getCertificateUuid() {
-        return certificateUuid;
-    }
-
-    public void setCertificateUuid(UUID certificateUuid) {
-        this.certificateUuid = certificateUuid;
-    }
-
-    public ScepProfile getScepProfile() {
-        return scepProfile;
     }
 
     public void setScepProfile(ScepProfile scepProfile) {
@@ -64,11 +49,19 @@ public class ScepTransaction extends UniquelyIdentified {
         if(scepProfile != null) this.scepProfileUuid = scepProfile.getUuid();
     }
 
-    public UUID getScepProfileUuid() {
-        return scepProfileUuid;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ScepTransaction that = (ScepTransaction) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setScepProfileUuid(UUID scepProfileUuid) {
-        this.scepProfileUuid = scepProfileUuid;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

@@ -1,21 +1,25 @@
 package com.czertainly.core.dao.entity;
 
-import com.czertainly.api.model.client.approval.ApprovalDetailStepDto;
 import com.czertainly.api.model.client.approval.ApprovalDetailDto;
+import com.czertainly.api.model.client.approval.ApprovalDetailStepDto;
 import com.czertainly.api.model.client.approval.ApprovalDto;
-import com.czertainly.api.model.core.auth.Resource;
 import com.czertainly.api.model.client.approval.ApprovalStatusEnum;
+import com.czertainly.api.model.core.auth.Resource;
 import com.czertainly.core.model.auth.ResourceAction;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.util.*;
 
-@Data
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "approval")
 @EntityListeners(AuditingEntityListener.class)
@@ -26,6 +30,7 @@ public class Approval extends UniquelyIdentified {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approval_profile_version_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private ApprovalProfileVersion approvalProfileVersion;
 
     @Column(name = "creator_uuid")
@@ -57,6 +62,7 @@ public class Approval extends UniquelyIdentified {
     private Date closedAt;
 
     @OneToMany(mappedBy = "approval", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private List<ApprovalRecipient> approvalRecipients;
 
     @Column(name = "object_data", columnDefinition = "jsonb")
@@ -110,4 +116,19 @@ public class Approval extends UniquelyIdentified {
         }
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Approval approval = (Approval) o;
+        return getUuid() != null && Objects.equals(getUuid(), approval.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

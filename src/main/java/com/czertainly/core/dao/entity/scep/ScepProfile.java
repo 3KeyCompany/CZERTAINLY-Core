@@ -14,13 +14,18 @@ import com.czertainly.core.util.SecretEncodingVersion;
 import com.czertainly.core.util.SecretsUtil;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "scep_profile")
 public class ScepProfile extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<ScepProfileDto>, ObjectAccessControlMapper<NameAndUuidDto>, Securable {
@@ -40,6 +45,7 @@ public class ScepProfile extends UniquelyIdentifiedAndAudited implements Seriali
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "ra_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private RaProfile raProfile;
 
     @Column(name = "ra_profile_uuid")
@@ -48,6 +54,7 @@ public class ScepProfile extends UniquelyIdentifiedAndAudited implements Seriali
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "ca_certificate_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Certificate caCertificate;
 
     @Column(name = "ca_certificate_uuid")
@@ -121,34 +128,8 @@ public class ScepProfile extends UniquelyIdentifiedAndAudited implements Seriali
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("description", description)
-                .append("name", name)
-                .append("isEnabled", isEnabled)
-                .append("requireManualApproval", requireManualApproval)
-                .toString();
-    }
-
-    @Override
     public NameAndUuidDto mapToAccessControlObjects() {
         return new NameAndUuidDto(uuid.toString(), name);
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
     }
 
     public Boolean isEnabled() {
@@ -159,71 +140,15 @@ public class ScepProfile extends UniquelyIdentifiedAndAudited implements Seriali
         isEnabled = enabled;
     }
 
-    public Boolean getRequireManualApproval() {
-        return requireManualApproval;
-    }
-
-    public void setRequireManualApproval(Boolean requireManualApproval) {
-        this.requireManualApproval = requireManualApproval;
-    }
-
-    public RaProfile getRaProfile() {
-        return raProfile;
-    }
-
     public void setRaProfile(RaProfile raProfile) {
         this.raProfile = raProfile;
         if(raProfile != null) this.raProfileUuid = raProfile.getUuid();
         else this.raProfileUuid = null;
     }
 
-    public UUID getRaProfileUuid() {
-        return raProfileUuid;
-    }
-
-    public void setRaProfileUuid(UUID raProfileUuid) {
-        this.raProfileUuid = raProfileUuid;
-    }
-
-    public Certificate getCaCertificate() {
-        return caCertificate;
-    }
-
     public void setCaCertificate(Certificate caCertificate) {
         this.caCertificate = caCertificate;
         if(caCertificate != null) this.setCaCertificateUuid( caCertificate.getUuid() );
-    }
-
-    public UUID getCaCertificateUuid() {
-        return caCertificateUuid;
-    }
-
-    public void setCaCertificateUuid(UUID caCertificateUuid) {
-        this.caCertificateUuid = caCertificateUuid;
-    }
-
-    public Integer getRenewalThreshold() {
-        return renewalThreshold;
-    }
-
-    public void setRenewalThreshold(Integer renewThreshold) {
-        this.renewalThreshold = renewThreshold;
-    }
-
-    public boolean isIncludeCaCertificate() {
-        return includeCaCertificate;
-    }
-
-    public void setIncludeCaCertificate(boolean includeCaCertificate) {
-        this.includeCaCertificate = includeCaCertificate;
-    }
-
-    public boolean isIncludeCaCertificateChain() {
-        return includeCaCertificateChain;
-    }
-
-    public void setIncludeCaCertificateChain(boolean includeCaCertificateChain) {
-        this.includeCaCertificateChain = includeCaCertificateChain;
     }
 
     public String getChallengePassword() {
@@ -241,35 +166,19 @@ public class ScepProfile extends UniquelyIdentifiedAndAudited implements Seriali
         }
     }
 
-    public String getIntuneTenant() {
-        return intuneTenant;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ScepProfile that = (ScepProfile) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setIntuneTenant(String intuneTenant) {
-        this.intuneTenant = intuneTenant;
-    }
-
-    public String getIntuneApplicationId() {
-        return intuneApplicationId;
-    }
-
-    public void setIntuneApplicationId(String intuneApplicationId) {
-        this.intuneApplicationId = intuneApplicationId;
-    }
-
-    public String getIntuneApplicationKey() {
-        return intuneApplicationKey;
-    }
-
-    public void setIntuneApplicationKey(String intuneApplicationKey) {
-        this.intuneApplicationKey = intuneApplicationKey;
-    }
-
-    public boolean isIntuneEnabled() {
-        return intuneEnabled;
-    }
-
-    public void setIntuneEnabled(boolean intuneEnabled) {
-        this.intuneEnabled = intuneEnabled;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

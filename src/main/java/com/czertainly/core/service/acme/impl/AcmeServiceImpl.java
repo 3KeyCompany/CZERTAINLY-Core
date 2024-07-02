@@ -160,12 +160,12 @@ public class AcmeServiceImpl implements AcmeService {
         } else {
             replaceUrl = "%s/%s/";
         }
-        directory.setNewNonce(String.format(replaceUrl + "new-nonce", baseUri, acmeProfileName));
-        directory.setNewAccount(String.format(replaceUrl + "new-account", baseUri, acmeProfileName));
-        directory.setNewOrder(String.format(replaceUrl + "new-order", baseUri, acmeProfileName));
-        directory.setNewAuthz(String.format(replaceUrl + "new-authz", baseUri, acmeProfileName));
-        directory.setRevokeCert(String.format(replaceUrl + "revoke-cert", baseUri, acmeProfileName));
-        directory.setKeyChange(String.format(replaceUrl + "key-change", baseUri, acmeProfileName));
+        directory.setNewNonce((replaceUrl + "new-nonce").formatted(baseUri, acmeProfileName));
+        directory.setNewAccount((replaceUrl + "new-account").formatted(baseUri, acmeProfileName));
+        directory.setNewOrder((replaceUrl + "new-order").formatted(baseUri, acmeProfileName));
+        directory.setNewAuthz((replaceUrl + "new-authz").formatted(baseUri, acmeProfileName));
+        directory.setRevokeCert((replaceUrl + "revoke-cert").formatted(baseUri, acmeProfileName));
+        directory.setKeyChange((replaceUrl + "key-change").formatted(baseUri, acmeProfileName));
         try {
             directory.setMeta(frameDirectoryMeta(acmeProfileName, isRaProfileBased));
         } catch (NotFoundException e) {
@@ -217,22 +217,22 @@ public class AcmeServiceImpl implements AcmeService {
 
         ResponseEntity.BodyBuilder responseBuilder;
         if (isRaProfileBased) {
-            accountDto.setOrders(String.format("%s/raProfile/%s/acct/%s/orders", baseUri, acmeProfileName, account.getAccountId()));
+            accountDto.setOrders("%s/raProfile/%s/acct/%s/orders".formatted(baseUri, acmeProfileName, account.getAccountId()));
             if (accountRequest.isOnlyReturnExisting()) {
                 responseBuilder = ResponseEntity.ok()
-                        .location(URI.create(String.format("%s/raProfile/%s/acct/%s", baseUri, acmeProfileName, account.getAccountId())));
+                        .location(URI.create("%s/raProfile/%s/acct/%s".formatted(baseUri, acmeProfileName, account.getAccountId())));
             } else {
                 responseBuilder = ResponseEntity
-                        .created(URI.create(String.format("%s/raProfile/%s/acct/%s", baseUri, acmeProfileName, account.getAccountId())));
+                        .created(URI.create("%s/raProfile/%s/acct/%s".formatted(baseUri, acmeProfileName, account.getAccountId())));
             }
         } else {
-            accountDto.setOrders(String.format("%s/%s/acct/%s/orders", baseUri, acmeProfileName, account.getAccountId()));
+            accountDto.setOrders("%s/%s/acct/%s/orders".formatted(baseUri, acmeProfileName, account.getAccountId()));
             if (accountRequest.isOnlyReturnExisting()) {
                 responseBuilder = ResponseEntity.ok()
-                        .location(URI.create(String.format("%s/%s/acct/%s", baseUri, acmeProfileName, account.getAccountId())));
+                        .location(URI.create("%s/%s/acct/%s".formatted(baseUri, acmeProfileName, account.getAccountId())));
             } else {
                 responseBuilder = ResponseEntity
-                        .created(URI.create(String.format("%s/%s/acct/%s", baseUri, acmeProfileName, account.getAccountId())));
+                        .created(URI.create("%s/%s/acct/%s".formatted(baseUri, acmeProfileName, account.getAccountId())));
             }
         }
 
@@ -969,7 +969,7 @@ public class AcmeServiceImpl implements AcmeService {
     }
 
     private String getHttpChallengeResponse(String domain, String token) throws AcmeProblemDocumentException {
-        return getResponseFollowRedirects(String.format(AcmeConstants.HTTP_CHALLENGE_BASE_URL, domain, token));
+        return getResponseFollowRedirects(AcmeConstants.HTTP_CHALLENGE_BASE_URL.formatted(domain, token));
     }
 
     private String getResponseFollowRedirects(String url) throws AcmeProblemDocumentException {

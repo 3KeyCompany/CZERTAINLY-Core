@@ -41,7 +41,7 @@ public class RuleServiceTest extends BaseSpringBootTest {
         conditionItemRequestDto.setFieldSource(FilterFieldSource.PROPERTY);
         conditionItemRequestDto.setFieldIdentifier("identifier");
         conditionItemRequestDto.setOperator(FilterConditionOperator.EQUALS);
-        conditionItemRequestDto.setValue(123);
+        conditionItemRequestDto.setValue("123");
 
         ConditionRequestDto conditionRequestDto = new ConditionRequestDto();
         conditionRequestDto.setName("TestCond");

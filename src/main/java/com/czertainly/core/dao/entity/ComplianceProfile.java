@@ -7,8 +7,8 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.*;
@@ -18,6 +18,10 @@ import java.util.stream.Collectors;
  * Compliance Profile entity storing the details of rules and groups associated with the compliance profile.
  * It also holds the manyToMany relation with the RA Profile as they can have more than 1 RA Profile and vice versa
  */
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "compliance_profile")
 public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<ComplianceProfileDto>, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -30,6 +34,7 @@ public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements S
 
     @JsonBackReference
     @OneToMany(mappedBy = "complianceProfile", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<ComplianceProfileRule> complianceRules = new HashSet<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
@@ -37,10 +42,12 @@ public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements S
             name = "compliance_profile_2_compliance_group",
             joinColumns = @JoinColumn(name = "profile_uuid"),
             inverseJoinColumns = @JoinColumn(name = "group_uuid"))
+    @ToString.Exclude
     private Set<ComplianceGroup> groups = new HashSet<>();
 
     @JsonBackReference
     @ManyToMany(mappedBy = "complianceProfiles", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<RaProfile> raProfiles = new HashSet<>();
 
     @Override
@@ -127,9 +134,9 @@ public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements S
             } else {
                 providerGroupSummary.put(connectorName, 1);
             }
-            List<Set<ComplianceRule>>  listRules = groups.stream().map(ComplianceGroup::getRules).collect(Collectors.toList());
+            List<Set<ComplianceRule>>  listRules = groups.stream().map(ComplianceGroup::getRules).toList();
             if(!listRules.isEmpty()){
-                Integer listRulesSize = listRules.stream().filter(r -> r != null).flatMap(Set::stream).collect(Collectors.toSet()).size();
+                Integer listRulesSize = listRules.stream().filter(Objects::nonNull).flatMap(Set::stream).collect(Collectors.toSet()).size();
                 providerGroupSummaryRules.put(connectorName, listRulesSize);
             }else {
                 providerGroupSummaryRules.put(connectorName, 0);
@@ -142,6 +149,7 @@ public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements S
                 providerSummary.put(connectorName, providerGroupSummaryRules.getOrDefault(connectorName, 1));
             }
         } else {
+            assert complianceRules != null;
             for (ComplianceProfileRule complianceRule : complianceRules) {
                 String connectorName = complianceRule.getComplianceRule().getConnector().getName();
                 if (providerSummary.containsKey(connectorName)) {
@@ -164,56 +172,19 @@ public class ComplianceProfile extends UniquelyIdentifiedAndAudited implements S
         return complianceProfileDto;
     }
 
-
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ComplianceProfile that = (ComplianceProfile) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("name", name)
-                .append("uuid", uuid)
-                .append("description", description)
-                .append("complianceRules", complianceRules)
-                .append("raProfiles", raProfiles)
-                .toString();
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public Set<ComplianceProfileRule> getComplianceRules() {
-        return complianceRules;
-    }
-
-    public void setComplianceRules(Set<ComplianceProfileRule> complianceRules) {
-        this.complianceRules = complianceRules;
-    }
-
-    public Set<RaProfile> getRaProfiles() {
-        return raProfiles;
-    }
-
-    public void setRaProfiles(Set<RaProfile> raProfiles) {
-        this.raProfiles = raProfiles;
-    }
-
-    public Set<ComplianceGroup> getGroups() {
-        return groups;
-    }
-
-    public void setGroups(Set<ComplianceGroup> groups) {
-        this.groups = groups;
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

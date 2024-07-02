@@ -106,7 +106,7 @@ public class V202306141503__CertificateRequest extends BaseJavaMigration {
                 }
 
                 final String sqlUpdateCommand =
-                        String.format(UPDATE_CERTIFICATE_BY_CERTIFICATE_REQUEST,
+                        UPDATE_CERTIFICATE_BY_CERTIFICATE_REQUEST.formatted(
                                 formatStringValue(certificateRequestUuid.toString()),
                                 formatStringValue(certificateUuid));
                 logger.info(sqlUpdateCommand);
@@ -123,7 +123,7 @@ public class V202306141503__CertificateRequest extends BaseJavaMigration {
     }
 
     private String formatStringValue(final String value) {
-        return value != null ? String.format("'%s'", value.replace("'", "''")) : "null";
+        return value != null ? "'%s'".formatted(value.replace("'", "''")) : "null";
     }
 
     private void executeCommands(Statement select, List<String> commands) throws SQLException {

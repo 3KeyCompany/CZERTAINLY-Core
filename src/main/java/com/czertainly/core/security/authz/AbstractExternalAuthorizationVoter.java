@@ -42,14 +42,14 @@ public abstract class AbstractExternalAuthorizationVoter<T> implements AccessDec
         if (this.supports(object.getClass())) {
             List<ExternalAuthorizationConfigAttribute> configAttributes = getExternalAuthorizationConfigAttributes(attributes);
 
-            if (authentication instanceof CzertainlyAuthenticationToken) {
-                return voteInternal((CzertainlyAuthenticationToken) authentication, object, configAttributes);
+            if (authentication instanceof CzertainlyAuthenticationToken token) {
+                return voteInternal(token, object, configAttributes);
             } else {
                 return voteInternal((AnonymousAuthenticationToken) authentication, object, configAttributes);
             }
 
         } else {
-            logger.warn(String.format("Unknown object type '%s'. Abstaining from voting.", object.getClass().getName()));
+            logger.warn("Unknown object type '%s'. Abstaining from voting.".formatted(object.getClass().getName()));
             return ACCESS_ABSTAIN;
         }
     }

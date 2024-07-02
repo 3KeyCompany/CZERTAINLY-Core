@@ -3,10 +3,11 @@ package com.czertainly.core.dao.entity;
 import com.czertainly.api.model.connector.compliance.ComplianceGroupsResponseDto;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -15,6 +16,10 @@ import java.util.UUID;
  * respective connector mapped to the connector table. If the user chooses to associate a group to a compliance profile,
  * a foreign key relation of type manyToMany will be established using the table compliance_group_to_compliance_profile
  */
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "compliance_group")
 public class ComplianceGroup extends UniquelyIdentified implements Serializable {
@@ -33,6 +38,7 @@ public class ComplianceGroup extends UniquelyIdentified implements Serializable 
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private Connector connector;
 
     @Column(name = "connector_uuid", nullable = false)
@@ -40,10 +46,12 @@ public class ComplianceGroup extends UniquelyIdentified implements Serializable 
 
     @JsonBackReference
     @OneToMany(mappedBy = "group", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<ComplianceRule> rules;
 
     @JsonBackReference
     @ManyToMany(mappedBy = "groups", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<ComplianceProfile> complianceProfiles;
 
     public ComplianceGroupsResponseDto mapToGroupResponse(){
@@ -54,77 +62,27 @@ public class ComplianceGroup extends UniquelyIdentified implements Serializable 
         return dto;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("kind", kind)
-                .append("description", description)
-                .append("decommissioned", decommissioned)
-                .toString();
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
-    public Connector getConnector() {
-        return connector;
-    }
-
     public void setConnector(Connector connector) {
         this.connector = connector;
         this.connectorUuid = connector.getUuid();
     }
 
-    public UUID getConnectorUuid() { return connectorUuid; }
+    public void setConnectorUuidFromString(String connectorUuid) { this.connectorUuid = UUID.fromString(connectorUuid); }
 
-    public void setConnectorUuid(UUID connectorUuid) { this.connectorUuid = connectorUuid; }
 
-    public void setConnectorUuid(String connectorUuid) { this.connectorUuid = UUID.fromString(connectorUuid); }
-
-    public String getDescription() {
-        return description;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        ComplianceGroup that = (ComplianceGroup) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public Set<ComplianceRule> getRules() {
-        return rules;
-    }
-
-    public void setRules(Set<ComplianceRule> rules) {
-        this.rules = rules;
-    }
-
-    public Boolean getDecommissioned() {
-        return decommissioned;
-    }
-
-    public void setDecommissioned(Boolean decommissioned) {
-        this.decommissioned = decommissioned;
-    }
-
-    public Set<ComplianceProfile> getComplianceProfiles() {
-        return complianceProfiles;
-    }
-
-    public void setComplianceProfiles(Set<ComplianceProfile> complianceProfiles) {
-        this.complianceProfiles = complianceProfiles;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

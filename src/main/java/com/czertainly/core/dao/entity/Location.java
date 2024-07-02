@@ -1,6 +1,5 @@
 package com.czertainly.core.dao.entity;
 
-
 import com.czertainly.api.model.common.NameAndUuidDto;
 import com.czertainly.api.model.core.location.CertificateInLocationDto;
 import com.czertainly.api.model.core.location.LocationDto;
@@ -8,14 +7,18 @@ import com.czertainly.core.util.AttributeDefinitionUtils;
 import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.*;
-import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "location")
 public class Location extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<LocationDto>, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -31,6 +34,8 @@ public class Location extends UniquelyIdentifiedAndAudited implements Serializab
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "entity_instance_ref_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
+    @JsonBackReference
     private EntityInstanceReference entityInstanceReference;
 
     @Column(name = "entity_instance_ref_uuid")
@@ -45,7 +50,8 @@ public class Location extends UniquelyIdentifiedAndAudited implements Serializab
             fetch = FetchType.LAZY
             //orphanRemoval = true
     )
-    @JsonBackReference
+    @JsonManagedReference
+    @ToString.Exclude
     private Set<CertificateLocation> certificates = new HashSet<>();
 
     @Column(name = "support_multi_entries")
@@ -54,82 +60,10 @@ public class Location extends UniquelyIdentifiedAndAudited implements Serializab
     @Column(name = "support_key_mgmt")
     private boolean supportKeyManagement;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public String getEntityInstanceName() {
-        return entityInstanceName;
-    }
-
-    public void setEntityInstanceName(String entityInstanceName) {
-        this.entityInstanceName = entityInstanceName;
-    }
-
-    public EntityInstanceReference getEntityInstanceReference() {
-        return entityInstanceReference;
-    }
-
     public void setEntityInstanceReference(EntityInstanceReference entityInstanceReference) {
         this.entityInstanceReference = entityInstanceReference;
         if (entityInstanceReference != null) this.entityInstanceReferenceUuid = entityInstanceReference.getUuid();
         else this.entityInstanceReferenceUuid = null;
-    }
-
-    public Boolean getEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(Boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    public Set<CertificateLocation> getCertificates() {
-        return certificates;
-    }
-
-    public void setCertificates(Set<CertificateLocation> certificates) {
-        this.certificates = certificates;
-    }
-
-    public boolean isSupportMultipleEntries() {
-        return supportMultipleEntries;
-    }
-
-    public void setSupportMultipleEntries(boolean supportMultipleEntries) {
-        this.supportMultipleEntries = supportMultipleEntries;
-    }
-
-    public boolean isSupportKeyManagement() {
-        return supportKeyManagement;
-    }
-
-    public void setSupportKeyManagement(boolean supportKeyManagement) {
-        this.supportKeyManagement = supportKeyManagement;
-    }
-
-    public UUID getEntityInstanceReferenceUuid() {
-        return entityInstanceReferenceUuid;
-    }
-
-    public void setEntityInstanceReferenceUuid(UUID entityInstanceReferenceUuid) {
-        this.entityInstanceReferenceUuid = entityInstanceReferenceUuid;
-    }
-
-    public void setEntityInstanceReferenceUuid(String entityInstanceReferenceUuid) {
-        this.entityInstanceReferenceUuid = UUID.fromString(entityInstanceReferenceUuid);
     }
 
     @Override
@@ -187,11 +121,18 @@ public class Location extends UniquelyIdentifiedAndAudited implements Serializab
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("enabled", enabled)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Location location = (Location) o;
+        return getUuid() != null && Objects.equals(getUuid(), location.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

@@ -32,10 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 class ConnectorServiceComplexTest extends BaseSpringBootTest {
 
@@ -106,7 +103,7 @@ class ConnectorServiceComplexTest extends BaseSpringBootTest {
         String kindName = "testKind";
 
         FunctionGroup functionGroup = new FunctionGroup();
-        functionGroup.setUuid("abfbc322-29e1-11ed-a261-0242ac120002");
+        functionGroup.setUuid(UUID.fromString("abfbc322-29e1-11ed-a261-0242ac120002"));
         functionGroup.setCode(FunctionGroupCode.CREDENTIAL_PROVIDER);
         functionGroup.setName(FunctionGroupCode.CREDENTIAL_PROVIDER.getCode());
         functionGroupRepository.save(functionGroup);

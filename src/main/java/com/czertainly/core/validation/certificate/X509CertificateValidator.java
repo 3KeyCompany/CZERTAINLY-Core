@@ -148,9 +148,9 @@ public class X509CertificateValidator implements ICertificateValidator {
                 }
 
                 CertificateValidationStatus chainValidationStatus = issuerNameEqualityMessage.isEmpty() && issuerStatusMessage.isEmpty() && (trustedCaMessage.isEmpty() || Boolean.TRUE.equals(isTrustedCa)) ? CertificateValidationStatus.VALID : CertificateValidationStatus.INVALID;
-                return new CertificateValidationCheckDto(CertificateValidationCheck.CERTIFICATE_CHAIN, chainValidationStatus, String.format("Certificate chain is complete.%s%s%s", trustedCaMessage, issuerNameEqualityMessage, issuerStatusMessage));
+                return new CertificateValidationCheckDto(CertificateValidationCheck.CERTIFICATE_CHAIN, chainValidationStatus, "Certificate chain is complete.%s%s%s".formatted(trustedCaMessage, issuerNameEqualityMessage, issuerStatusMessage));
             } else {
-                return new CertificateValidationCheckDto(CertificateValidationCheck.CERTIFICATE_CHAIN, CertificateValidationStatus.INVALID, String.format("Incomplete certificate chain. Missing certificate in validation path.%s%s", issuerNameEqualityMessage, issuerStatusMessage));
+                return new CertificateValidationCheckDto(CertificateValidationCheck.CERTIFICATE_CHAIN, CertificateValidationStatus.INVALID, "Incomplete certificate chain. Missing certificate in validation path.%s%s".formatted(issuerNameEqualityMessage, issuerStatusMessage));
             }
         }
     }
@@ -387,7 +387,7 @@ public class X509CertificateValidator implements ICertificateValidator {
         final long sec = TimeUnit.MILLISECONDS.toSeconds(milliseconds)
                 - TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(milliseconds));
 
-        return String.format("%d days %d hours %d minutes %d seconds", dy, hr, min, sec);
+        return "%d days %d hours %d minutes %d seconds".formatted(dy, hr, min, sec);
     }
 
     private Map<CertificateValidationCheck, CertificateValidationCheckDto> initializeValidationOutput() {

@@ -5,11 +5,16 @@ import com.czertainly.core.dao.entity.Certificate;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "cmp_transaction")
 public class CmpTransaction extends UniquelyIdentified {
@@ -43,6 +48,7 @@ public class CmpTransaction extends UniquelyIdentified {
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "cmp_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private CmpProfile cmpProfile;
     public CmpProfile getCmpProfile() {
         return cmpProfile;
@@ -55,6 +61,7 @@ public class CmpTransaction extends UniquelyIdentified {
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "certificate_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private Certificate certificate;
     public Certificate getCertificate() {
         return certificate;
@@ -62,5 +69,21 @@ public class CmpTransaction extends UniquelyIdentified {
     public void setCertificate(Certificate certificate) {
         this.certificate = certificate;
         if(certificate != null) certificateUuid = certificate.getUuid();
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        CmpTransaction that = (CmpTransaction) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

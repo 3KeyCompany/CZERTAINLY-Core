@@ -1,6 +1,5 @@
 package com.czertainly.core.dao.repository;
 
-import com.czertainly.core.dao.entity.ComplianceProfile;
 import com.czertainly.core.dao.entity.RaProfile;
 import com.czertainly.core.dao.entity.RaProfileProtocolAttribute;
 import org.springframework.stereotype.Repository;

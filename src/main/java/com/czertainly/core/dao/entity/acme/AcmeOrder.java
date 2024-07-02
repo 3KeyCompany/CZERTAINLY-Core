@@ -10,17 +10,18 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.SerializationUtil;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.Serializable;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "acme_order")
 public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<Order> {
@@ -30,6 +31,7 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "account_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private AcmeAccount acmeAccount;
 
     @Column(name = "account_uuid")
@@ -37,6 +39,7 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificate_ref", insertable = false, updatable = false)
+    @ToString.Exclude
     private Certificate certificateReference;
 
     @Column(name = "certificate_ref")
@@ -63,6 +66,7 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
 
     @JsonBackReference
     @OneToMany(mappedBy = "order", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<AcmeAuthorization> authorizations = new HashSet<>();
 
     @Override
@@ -81,38 +85,9 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
         return order;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("orderId", orderId)
-                .append("issuedCertificate", certificateReference)
-                .append("acmeAccount", acmeAccount)
-                .append("notBefore", notBefore)
-                .append("notAfter", notAfter)
-                .append("expires", expires)
-                .append("certificateId", certificateId)
-                .append("identifiers", identifiers).toString();
-    }
-
-    public String getOrderId() {
-        return orderId;
-    }
-
-    public void setOrderId(String orderId) {
-        this.orderId = orderId;
-    }
-
-    public AcmeAccount getAcmeAccount() {
-        return acmeAccount;
-    }
-
     public void setAcmeAccount(AcmeAccount acmeAccount) {
         this.acmeAccount = acmeAccount;
         this.acmeAccountUuid = acmeAccount.getUuid();
-    }
-
-    public Certificate getCertificateReference() {
-        return certificateReference;
     }
 
     public void setCertificateReference(Certificate certificateReference) {
@@ -120,88 +95,7 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
         if(certificateReference != null) this.certificateReferenceUuid = certificateReference.getUuid();
     }
 
-    public UUID getAcmeAccountUuid() {
-        return acmeAccountUuid;
-    }
-
-    public void setAcmeAccountUuid(UUID acmeAccountUuid) {
-        this.acmeAccountUuid = acmeAccountUuid;
-    }
-
-    public void setAcmeAccountUuid(String acmeAccountUuid) {
-        this.acmeAccountUuid = UUID.fromString(acmeAccountUuid);
-    }
-
-    public Date getNotBefore() {
-        return notBefore;
-    }
-
-    public void setNotBefore(Date notBefore) {
-        this.notBefore = notBefore;
-    }
-
-    public Date getNotAfter() {
-        return notAfter;
-    }
-
-    public void setNotAfter(Date notAfter) {
-        this.notAfter = notAfter;
-    }
-
-    public Date getExpires() {
-        return expires;
-    }
-
-    public void setExpires(Date expires) {
-        this.expires = expires;
-    }
-
-    public String getIdentifiers() {
-        return identifiers;
-    }
-
-    public void setIdentifiers(String identifiers) {
-        this.identifiers = identifiers;
-    }
-
-    public OrderStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(OrderStatus status) {
-        this.status = status;
-    }
-
-    public Set<AcmeAuthorization> getAuthorizations() {
-        return authorizations;
-    }
-
-    public void setAuthorizations(Set<AcmeAuthorization> authorizations) {
-        this.authorizations = authorizations;
-    }
-
-    public String getCertificateId() {
-        return certificateId;
-    }
-
-    public void setCertificateId(String certificateId) {
-        this.certificateId = certificateId;
-    }
-
-    public UUID getCertificateReferenceUuid() {
-        return certificateReferenceUuid;
-    }
-
-    public void setCertificateReferenceUuid(UUID certificateReferenceUuid) {
-        this.certificateReferenceUuid = certificateReferenceUuid;
-    }
-
-    public void setCertificateReferenceUuid(String certificateReferenceUuid) {
-        this.certificateReferenceUuid = UUID.fromString(certificateReferenceUuid);
-    }
-
-    // Customer Getter for Order
-
+    // Custom Getter for Order
     private String getBaseUrl() {
         if(ServletUriComponentsBuilder.fromCurrentRequestUri().build().toUriString().contains("/raProfile/")){
             return ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString()
@@ -217,13 +111,29 @@ public class AcmeOrder extends UniquelyIdentifiedAndAudited implements Serializa
         return getBaseUrl() + "/order/" + orderId;
     }
 
-    // Customer Getter for Certificate URL
+    // Custom Getter for Certificate URL
     public String getCertificateUrl() {
         return getBaseUrl() + "/cert/" + certificateId;
     }
 
-    // Customer Getter for Finalize URL
+    // Custom Getter for Finalize URL
     public String getFinalizeUrl() {
         return getBaseUrl() + "/order/" + orderId + "/finalize";
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AcmeOrder acmeOrder = (AcmeOrder) o;
+        return getUuid() != null && Objects.equals(getUuid(), acmeOrder.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

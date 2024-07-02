@@ -41,21 +41,21 @@ public class ConnectorServiceMockTest {
     @BeforeEach
     public void setUp() {
         endpoint1 = new Endpoint();
-        endpoint1.setUuid("abfbc322-29e1-11ed-a261-0242ac120002");
+        endpoint1.setUuid(UUID.fromString("abfbc322-29e1-11ed-a261-0242ac120002"));
         endpoint1.setName("endpoint1");
         endpoint1.setContext("/e1");
         endpoint1.setMethod("GET");
         endpoint1.setRequired(true);
 
         endpoint2 = new Endpoint();
-        endpoint2.setUuid("abfbc322-29e1-11ed-a261-0242ac120003");
+        endpoint2.setUuid(UUID.fromString("abfbc322-29e1-11ed-a261-0242ac120003"));
         endpoint2.setName("endpoint2");
         endpoint2.setContext("/e2");
         endpoint2.setMethod("GET");
         endpoint2.setRequired(true);
 
         endpoint3 = new Endpoint();
-        endpoint3.setUuid("abfbc322-29e1-11ed-a261-0242ac120004");
+        endpoint3.setUuid(UUID.fromString("abfbc322-29e1-11ed-a261-0242ac120004"));
         endpoint3.setName("endpoint3");
         endpoint3.setContext("/e3");
         endpoint3.setMethod("GET");

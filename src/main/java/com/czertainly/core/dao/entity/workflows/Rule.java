@@ -7,16 +7,19 @@ import com.czertainly.api.model.core.workflows.RuleDto;
 import com.czertainly.core.dao.entity.UniquelyIdentified;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
-@Entity
 @Getter
 @Setter
+@ToString
+@RequiredArgsConstructor
+@Entity
 @Table(name = "rule")
 public class Rule extends UniquelyIdentified {
     @Column(name = "name", nullable = false)
@@ -34,10 +37,12 @@ public class Rule extends UniquelyIdentified {
             name = "rule_2_condition",
             joinColumns = @JoinColumn(name = "rule_uuid"),
             inverseJoinColumns = @JoinColumn(name = "condition_uuid"))
+    @ToString.Exclude
     private List<Condition> conditions;
 
     @JsonBackReference
     @ManyToMany(mappedBy = "rules", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<Trigger> triggers = new HashSet<>();
 
     public RuleDto mapToDto() {
@@ -60,4 +65,19 @@ public class Rule extends UniquelyIdentified {
         return ruleDetailDto;
     }
 
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Rule rule = (Rule) o;
+        return getUuid() != null && Objects.equals(getUuid(), rule.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
 }

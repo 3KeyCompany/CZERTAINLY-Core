@@ -17,9 +17,10 @@ public class ScheduledTasks {
 
     @Bean
     @ConditionalOnProperty(value = "scheduled-tasks.enabled", matchIfMissing = true, havingValue = "true")
-    public void registerJobs() throws SchedulerException {
+    public Void registerJobs() throws SchedulerException {
         updateCertificateStatusTask.registerScheduler();
         updateIntuneRevocationRequestsTask.registerScheduler();
+        return null;
     }
 
     // SETTERs

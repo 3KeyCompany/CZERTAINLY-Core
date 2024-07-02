@@ -10,13 +10,18 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "acme_profile")
 public class AcmeProfile extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<AcmeProfileDto>, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -42,6 +47,7 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited implements Seriali
     @OneToOne(fetch = FetchType.LAZY)
     @JsonBackReference
     @JoinColumn(name = "ra_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private RaProfile raProfile;
 
     @Column(name = "ra_profile_uuid")
@@ -111,37 +117,8 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited implements Seriali
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("description", description)
-                .append("name", name)
-                .append("isEnabled", isEnabled)
-                .append("termsOfServiceUrl", termsOfServiceUrl)
-                .append("dnsResolverIp", dnsResolverIp)
-                .append("dnsResolverPort", dnsResolverPort)
-                .append("termsOfServiceChangeUrl", termsOfServiceChangeUrl)
-                .toString();
-    }
-
-    @Override
     public NameAndUuidDto mapToAccessControlObjects() {
         return new NameAndUuidDto(uuid.toString(), name);
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
     }
 
     public Boolean isEnabled() {
@@ -152,102 +129,37 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited implements Seriali
         isEnabled = enabled;
     }
 
-    public String getTermsOfServiceUrl() {
-        return termsOfServiceUrl;
-    }
-
-    public void setTermsOfServiceUrl(String termsOfServiceUrl) {
-        this.termsOfServiceUrl = termsOfServiceUrl;
-    }
-
-    public String getDnsResolverIp() {
-        return dnsResolverIp;
-    }
-
-    public void setDnsResolverIp(String dnsResolverIp) {
-        this.dnsResolverIp = dnsResolverIp;
-    }
-
-    public String getDnsResolverPort() {
-        return dnsResolverPort;
-    }
-
-    public void setDnsResolverPort(String dnsResolverPort) {
-        this.dnsResolverPort = dnsResolverPort;
-    }
-
-    public RaProfile getRaProfile() {
-        return raProfile;
-    }
-
     public void setRaProfile(RaProfile raProfile) {
         this.raProfile = raProfile;
         if (raProfile != null) this.raProfileUuid = raProfile.getUuid();
         else this.raProfileUuid = null;
     }
 
-    public String getWebsite() {
-        return website;
-    }
-
-    public void setWebsite(String website) {
-        this.website = website;
-    }
-
-    public Integer getValidity() {
-        return validity;
-    }
-
-    public void setValidity(Integer validity) {
-        this.validity = validity;
-    }
-
-    public Integer getRetryInterval() {
-        return retryInterval;
-    }
-
-    public void setRetryInterval(Integer retryInterval) {
-        this.retryInterval = retryInterval;
-    }
-
     public Boolean isDisableNewOrders() {
         return disableNewOrders;
-    }
-
-    public void setDisableNewOrders(Boolean disableNewOrders) {
-        this.disableNewOrders = disableNewOrders;
     }
 
     public Boolean isRequireContact() {
         return requireContact;
     }
 
-    public void setRequireContact(Boolean insistContact) {
-        this.requireContact = insistContact;
-    }
-
     public Boolean isRequireTermsOfService() {
         return requireTermsOfService;
     }
 
-    public void setRequireTermsOfService(Boolean isRequireTermsOfService) {
-        this.requireTermsOfService = isRequireTermsOfService;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AcmeProfile that = (AcmeProfile) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public String getTermsOfServiceChangeUrl() {
-        return termsOfServiceChangeUrl;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
-
-    public void setTermsOfServiceChangeUrl(String termsOfServiceChangeUrl) {
-        this.termsOfServiceChangeUrl = termsOfServiceChangeUrl;
-    }
-
-    public UUID getRaProfileUuid() {
-        return raProfileUuid;
-    }
-
-    public void setRaProfileUuid(UUID raProfileUuid) {
-        this.raProfileUuid = raProfileUuid;
-    }
-
 }

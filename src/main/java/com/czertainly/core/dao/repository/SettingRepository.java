@@ -15,5 +15,4 @@ public interface SettingRepository extends SecurityFilterRepository<Setting, UUI
 
     List<Setting> findBySection(SettingsSection section);
 
-    Optional<Setting> findBySectionAndName(SettingsSection section, String name);
 }

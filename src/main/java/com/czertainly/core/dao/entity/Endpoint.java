@@ -2,13 +2,19 @@ package com.czertainly.core.dao.entity;
 
 import com.czertainly.api.model.core.connector.EndpointDto;
 import com.czertainly.core.util.DtoMapper;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "endpoint")
 public class Endpoint extends UniquelyIdentified implements Serializable, DtoMapper<EndpointDto> {
@@ -27,6 +33,8 @@ public class Endpoint extends UniquelyIdentified implements Serializable, DtoMap
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "function_group_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
+    @JsonBackReference
     private FunctionGroup functionGroup;
 
     @Column(name = "function_group_uuid", nullable = false)
@@ -43,58 +51,23 @@ public class Endpoint extends UniquelyIdentified implements Serializable, DtoMap
         return dto;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("context", context)
-                .append("method", method)
-                .append("required", required)
-                .toString();
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getContext() {
-        return context;
-    }
-
-    public void setContext(String context) {
-        this.context = context;
-    }
-
-    public String getMethod() {
-        return method;
-    }
-
-    public void setMethod(String method) {
-        this.method = method;
-    }
-
     public Boolean isRequired() {
         return required;
     }
 
-    public void setRequired(Boolean required) {
-        this.required = required;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Endpoint endpoint = (Endpoint) o;
+        return getUuid() != null && Objects.equals(getUuid(), endpoint.getUuid());
     }
 
-    public UUID getFunctionGroupUuid() {
-        return functionGroupUuid;
-    }
-
-    public void setFunctionGroupUuid(UUID functionGroupUuid) {
-        this.functionGroupUuid = functionGroupUuid;
-    }
-
-    public void setFunctionGroupUuid(String functionGroupUuid) {
-        this.functionGroupUuid = UUID.fromString(functionGroupUuid);
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

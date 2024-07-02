@@ -4,7 +4,6 @@ import com.czertainly.api.exception.AttributeException;
 import com.czertainly.api.exception.NotFoundException;
 import com.czertainly.api.exception.ValidationException;
 import com.czertainly.api.model.client.attribute.RequestAttributeDto;
-import com.czertainly.api.model.client.attribute.ResponseAttributeDto;
 import com.czertainly.api.model.client.metadata.MetadataResponseDto;
 import com.czertainly.api.model.common.attribute.v2.AttributeType;
 import com.czertainly.api.model.common.attribute.v2.CustomAttribute;
@@ -56,6 +55,9 @@ public class AttributeEngineTest extends BaseSpringBootTest {
     private ConnectorRepository connectorRepository;
     @Autowired
     private AuthorityInstanceReferenceRepository authorityInstanceReferenceRepository;
+    @Autowired
+    private OwnerAssociationRepository ownerAssociationRepository;
+
     private Connector connectorAuthority;
     private Connector connectorDiscovery;
     private Certificate certificate;
@@ -109,6 +111,17 @@ public class AttributeEngineTest extends BaseSpringBootTest {
         certificate.setCertificateContentId(certificateContent.getId());
         certificate.setRaProfile(raProfile);
         certificate = certificateRepository.save(certificate);
+
+        // Ensure OwnerAssociation is created and associated
+        OwnerAssociation ownerAssociation = new OwnerAssociation();
+        ownerAssociation.setOwnerUuid(UUID.randomUUID()); // Set a proper UUID
+        ownerAssociation.setOwnerUsername("ownerName");
+        ownerAssociation.setResource(Resource.CERTIFICATE);
+        ownerAssociation.setObjectUuid(certificate.getUuid());
+        ownerAssociationRepository.saveAndFlush(ownerAssociation);
+
+        certificate.setOwner(ownerAssociation);
+        certificateRepository.save(certificate);
 
         networkDiscoveryUuid = UUID.randomUUID();
         authorityDiscoveryUuid = UUID.randomUUID();
@@ -164,9 +177,8 @@ public class AttributeEngineTest extends BaseSpringBootTest {
         expirationDateAttributeDto.setContent(List.of(new DateAttributeContent(LocalDate.EPOCH)));
         Assertions.assertThrows(ValidationException.class, () -> attributeEngine.validateCustomAttributesContent(Resource.CERTIFICATE, List.of(expirationDateAttributeDto)), "Missing content for required custom attribute");
 
-        List<ResponseAttributeDto> responseAttributes = attributeEngine.updateObjectCustomAttributesContent(Resource.CERTIFICATE, certificate.getUuid(), List.of(departmentAttributeDto, expirationDateAttributeDto));
-        List<ResponseAttributeDto> responseAttributes2 = attributeEngine.getObjectCustomAttributesContent(Resource.CERTIFICATE, certificate.getUuid());
-        Assertions.assertEquals(2, responseAttributes.size());
+        // the following should not throw any exception, we cannot update read-only attributes
+        Assertions.assertThrows(ValidationException.class, () -> attributeEngine.updateObjectCustomAttributesContent(Resource.CERTIFICATE, certificate.getUuid(), List.of(departmentAttributeDto, expirationDateAttributeDto)), "Read-only attribute content should not be able to be changed");
     }
 
     @Test

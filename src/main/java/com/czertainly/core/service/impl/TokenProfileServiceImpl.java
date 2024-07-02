@@ -92,7 +92,7 @@ public class TokenProfileServiceImpl implements TokenProfileService {
     public List<TokenProfileDto> listTokenProfiles(Optional<Boolean> enabled, SecurityFilter filter) {
         logger.info("Listing token profiles");
         filter.setParentRefProperty("tokenInstanceReferenceUuid");
-        if (!enabled.isPresent()) {
+        if (enabled.isEmpty()) {
             return tokenProfileRepository.findUsingSecurityFilter(filter)
                     .stream()
                     .map(TokenProfile::mapToDto)

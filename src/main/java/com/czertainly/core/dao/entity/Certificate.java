@@ -6,26 +6,38 @@ import com.czertainly.api.model.core.certificate.*;
 import com.czertainly.api.model.core.compliance.ComplianceStatus;
 import com.czertainly.api.model.core.cryptography.key.KeyState;
 import com.czertainly.api.model.core.enums.CertificateRequestFormat;
-import com.czertainly.core.util.*;
+import com.czertainly.core.util.CertificateUtil;
+import com.czertainly.core.util.DtoMapper;
+import com.czertainly.core.util.MetaDefinitions;
+import com.czertainly.core.util.SerializationUtil;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
-import org.hibernate.annotations.Where;
-import org.hibernate.annotations.WhereJoinTable;
+import lombok.*;
+import org.hibernate.annotations.NotFound;
+import org.hibernate.annotations.NotFoundAction;
+import org.hibernate.annotations.SQLJoinTableRestriction;
+import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.proxy.HibernateProxy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "certificate")
 public class Certificate extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<CertificateDetailDto> {
+
     private static final String EMPTY_COMMON_NAME = "<empty>";
 
+    @Serial
     private static final long serialVersionUID = -3048734620156664554L;
 
     private static final Logger logger = LoggerFactory.getLogger(Certificate.class);
@@ -41,6 +53,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificate_content_id", insertable = false, updatable = false)
+    @ToString.Exclude
     private CertificateContent certificateContent;
 
     @Column(name = "certificate_content_id")
@@ -98,6 +111,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ra_profile_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private RaProfile raProfile;
 
     @Column(name = "ra_profile_uuid")
@@ -106,14 +120,17 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "group_association",
-            joinColumns = @JoinColumn(name = "object_uuid", referencedColumnName = "uuid", foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT), insertable = false, updatable = false),
-            inverseJoinColumns = @JoinColumn(name = "group_uuid", foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT), insertable = false, updatable = false)
+            joinColumns = @JoinColumn(name = "object_uuid", referencedColumnName = "uuid", insertable = false, updatable = false),
+            inverseJoinColumns = @JoinColumn(name = "group_uuid", insertable = false, updatable = false)
     )
-    @WhereJoinTable(clause = "resource = 'CERTIFICATE'")
+    @SQLJoinTableRestriction("resource = 'CERTIFICATE'")
+    @ToString.Exclude
     private Set<Group> groups = new HashSet<>();
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "uuid", referencedColumnName = "object_uuid", foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT), insertable = false, updatable = false)
+    @JoinColumn(name = "uuid", referencedColumnName = "object_uuid", insertable = false, updatable = false)
+    @SQLRestriction("resource = 'CERTIFICATE'")
+    @ToString.Exclude
     private OwnerAssociation owner;
 
     @Column(name = "status_validation_timestamp")
@@ -123,6 +140,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
             //orphanRemoval = true
     )
     @JsonBackReference
+    @ToString.Exclude
     private Set<CertificateLocation> locations = new HashSet<>();
 
     @Column(name = "key_size")
@@ -150,6 +168,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
 
     @JsonBackReference
     @OneToMany(mappedBy = "certificate", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<CertificateEventHistory> eventHistories = new HashSet<>();
 
     @Column(name = "user_uuid")
@@ -157,6 +176,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "key_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private CryptographicKey key;
 
     @Column(name = "key_uuid")
@@ -164,6 +184,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificate_request_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
     private CertificateRequestEntity certificateRequestEntity;
 
     @Column(name = "certificate_request_uuid")
@@ -208,11 +229,6 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
             dto.setOwnerUuid(owner.getOwnerUuid().toString());
             dto.setOwner(owner.getOwnerUsername());
         }
-//        if (owners != null && !owners.isEmpty()) {
-//            dto.setOwnerUuid(owners.get(0).getOwnerUuid().toString());
-//            dto.setOwner(owners.get(0).getOwnerUsername());
-//        }
-
         /*
          * Result for the compliance check of a certificate is stored in the database in the form of List of Rule IDs.
          * When the details of the certificate is requested, the Service will transform the result into the user understandable
@@ -231,9 +247,9 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
             }
             dto.setRaProfile(raDto);
         }
+
         if (groups != null) {
             dto.setGroups(groups.stream().map(Group::mapToDto).toList());
-//            dto.setGroups(groups.stream().map(g -> g.getGroup().mapToDto()).toList());
         }
 
         //Check and assign private key availability
@@ -285,7 +301,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
         }
         dto.setCertificateType(certificateType);
         dto.setIssuerSerialNumber(issuerSerialNumber);
-        /**
+        /*
          * Result for the compliance check of a certificate is stored in the database in the form of List of Rule IDs.
          * When the details of the certificate is requested, the Service will transform the result into the user understandable
          * format and send it. It is not moved into the mapToDto function, as the computation involves other repositories
@@ -303,6 +319,7 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
             }
             dto.setRaProfile(raDto);
         }
+
         if (groups != null) {
             dto.setGroups(groups.stream().map(Group::mapToDto).toList());
         }
@@ -330,241 +347,16 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
         return certificateRequestEntity;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE).append("uuid", uuid).append("commonName", commonName).append("serialNumber", serialNumber).toString();
-    }
-
-    public String getCommonName() {
-        return commonName;
-    }
-
-    public void setCommonName(String commonName) {
-        this.commonName = commonName;
-    }
-
-    public String getIssuerCommonName() {
-        return issuerCommonName;
-    }
-
-    public void setIssuerCommonName(String issuerCommonName) {
-        this.issuerCommonName = issuerCommonName;
-    }
-
-    public String getSerialNumber() {
-        return serialNumber;
-    }
-
-    public void setSerialNumber(String serialNumber) {
-        this.serialNumber = serialNumber;
-    }
-
-    public Date getNotBefore() {
-        return notBefore;
-    }
-
-    public void setNotBefore(Date notBefore) {
-        this.notBefore = notBefore;
-    }
-
-    public Date getNotAfter() {
-        return notAfter;
-    }
-
-    public void setNotAfter(Date notAfter) {
-        this.notAfter = notAfter;
-    }
-
-    public String getPublicKeyAlgorithm() {
-        return publicKeyAlgorithm;
-    }
-
-    public void setPublicKeyAlgorithm(String publicKeyAlgorithm) {
-        this.publicKeyAlgorithm = publicKeyAlgorithm;
-    }
-
-    public String getSignatureAlgorithm() {
-        return signatureAlgorithm;
-    }
-
-    public void setSignatureAlgorithm(String signatureAlgorithm) {
-        this.signatureAlgorithm = signatureAlgorithm;
-    }
-
-    public String getBasicConstraints() {
-        return basicConstraints;
-    }
-
-    public void setBasicConstraints(String basicConstraints) {
-        this.basicConstraints = basicConstraints;
-    }
-
-    public String getIssuerDn() {
-        return issuerDn;
-    }
-
-    public void setIssuerDn(String issuerDn) {
-        this.issuerDn = issuerDn;
-    }
-
-    public String getSubjectDn() {
-        return subjectDn;
-    }
-
-    public void setSubjectDn(String subjectDn) {
-        this.subjectDn = subjectDn;
-    }
-
-    public String getIssuerDnNormalized() {
-        return issuerDnNormalized;
-    }
-
-    public void setIssuerDnNormalized(String issuerDnNormalized) {
-        this.issuerDnNormalized = issuerDnNormalized;
-    }
-
-    public String getSubjectDnNormalized() {
-        return subjectDnNormalized;
-    }
-
-    public void setSubjectDnNormalized(String subjectDnNormalized) {
-        this.subjectDnNormalized = subjectDnNormalized;
-    }
-
-    public CertificateContent getCertificateContent() {
-        return certificateContent;
-    }
-
     public void setCertificateContent(CertificateContent certificateContent) {
         this.certificateContent = certificateContent;
         if (certificateContent != null) this.certificateContentId = certificateContent.getId();
         else this.certificateContentId = null;
     }
 
-    public String getFingerprint() {
-        return fingerprint;
-    }
-
-    public void setFingerprint(String fingerprint) {
-        this.fingerprint = fingerprint;
-    }
-
-    public CertificateState getState() {
-        return state;
-    }
-
-    public void setState(CertificateState state) {
-        this.state = state;
-    }
-
-    public CertificateValidationStatus getValidationStatus() {
-        return validationStatus;
-    }
-
-    public void setValidationStatus(CertificateValidationStatus validationStatus) {
-        this.validationStatus = validationStatus;
-    }
-
-    public String getExtendedKeyUsage() {
-        return extendedKeyUsage;
-    }
-
-    public void setExtendedKeyUsage(String extendedKeyUsage) {
-        this.extendedKeyUsage = extendedKeyUsage;
-    }
-
-    public String getKeyUsage() {
-        return keyUsage;
-    }
-
-    public void setKeyUsage(String keyUsage) {
-        this.keyUsage = keyUsage;
-    }
-
-    public String getSubjectAlternativeNames() {
-        return subjectAlternativeNames;
-    }
-
-    public void setSubjectAlternativeNames(String subjectAlternativeNames) {
-        this.subjectAlternativeNames = subjectAlternativeNames;
-    }
-
-    public Integer getKeySize() {
-        return keySize;
-    }
-
-    public void setKeySize(Integer keySize) {
-        this.keySize = keySize;
-    }
-
-    public CertificateType getCertificateType() {
-        return certificateType;
-    }
-
-    public void setCertificateType(CertificateType certificateType) {
-        this.certificateType = certificateType;
-    }
-
-    public String getIssuerSerialNumber() {
-        return issuerSerialNumber;
-    }
-
-    public void setIssuerSerialNumber(String issuerSerialNumber) {
-        this.issuerSerialNumber = issuerSerialNumber;
-    }
-
-    public RaProfile getRaProfile() {
-        return raProfile;
-    }
-
     public void setRaProfile(RaProfile raProfile) {
         this.raProfile = raProfile;
         if (raProfile != null) this.raProfileUuid = raProfile.getUuid();
         else this.raProfileUuid = null;
-    }
-
-    public String getCertificateValidationResult() {
-        return certificateValidationResult;
-    }
-
-    public void setCertificateValidationResult(String certificateValidationResult) {
-        this.certificateValidationResult = certificateValidationResult;
-    }
-
-    public Set<CertificateEventHistory> getEventHistories() {
-        return eventHistories;
-    }
-
-    public void setEventHistories(Set<CertificateEventHistory> eventHistories) {
-        this.eventHistories = eventHistories;
-    }
-
-    public Set<CertificateLocation> getLocations() {
-        return locations;
-    }
-
-    public void setLocations(Set<CertificateLocation> locations) {
-        this.locations = locations;
-    }
-
-    public UUID getRaProfileUuid() {
-        return raProfileUuid;
-    }
-
-    public void setRaProfileUuid(UUID raProfileUuid) {
-        this.raProfileUuid = raProfileUuid;
-    }
-
-    public OwnerAssociation getOwner() {
-        return owner;
-    }
-
-    public Set<Group> getGroups() {
-        return groups;
-    }
-
-    public void setGroups(Set<Group> groups) {
-        this.groups = groups;
     }
 
     public CertificateComplianceStorageDto getComplianceResult() {
@@ -578,61 +370,9 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
         this.complianceResult = SerializationUtil.serialize(complianceResult);
     }
 
-    public ComplianceStatus getComplianceStatus() {
-        return complianceStatus;
-    }
-
-    public void setComplianceStatus(ComplianceStatus complianceStatus) {
-        this.complianceStatus = complianceStatus;
-    }
-
-    public Long getCertificateContentId() {
-        return certificateContentId;
-    }
-
-    public void setCertificateContentId(Long certificateContentId) {
-        this.certificateContentId = certificateContentId;
-    }
-
-    public UUID getUserUuid() {
-        return userUuid;
-    }
-
-    public void setUserUuid(UUID userUuid) {
-        this.userUuid = userUuid;
-    }
-
-    public CryptographicKey getKey() {
-        return key;
-    }
-
     public void setKey(CryptographicKey key) {
         this.key = key;
         if (key != null) this.keyUuid = uuid;
-    }
-
-    public UUID getKeyUuid() {
-        return keyUuid;
-    }
-
-    public void setKeyUuid(UUID keyUuid) {
-        this.keyUuid = keyUuid;
-    }
-
-    public String getPublicKeyFingerprint() {
-        return publicKeyFingerprint;
-    }
-
-    public void setPublicKeyFingerprint(String publicKeyFingerprint) {
-        this.publicKeyFingerprint = publicKeyFingerprint;
-    }
-
-    public LocalDateTime getStatusValidationTimestamp() {
-        return statusValidationTimestamp;
-    }
-
-    public void setStatusValidationTimestamp(LocalDateTime statusValidationTimestamp) {
-        this.statusValidationTimestamp = statusValidationTimestamp;
     }
 
     public Long getValidity() {
@@ -651,30 +391,6 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
         this.certificateRequestEntity = certificateRequestEntity;
     }
 
-    public UUID getCertificateRequestUuid() {
-        return certificateRequestUuid;
-    }
-
-    public void setCertificateRequestUuid(UUID certificateRequestUuid) {
-        this.certificateRequestUuid = certificateRequestUuid;
-    }
-
-
-    public UUID getSourceCertificateUuid() {
-        return sourceCertificateUuid;
-    }
-
-    public void setSourceCertificateUuid(UUID sourceCertificateUuid) {
-        this.sourceCertificateUuid = sourceCertificateUuid;
-    }
-
-    public UUID getIssuerCertificateUuid() {
-        return issuerCertificateUuid;
-    }
-
-    public void setIssuerCertificateUuid(UUID issuerCertificateUuid) {
-        this.issuerCertificateUuid = issuerCertificateUuid;
-    }
 
     private String getIssuerCommonNameToDto() {
         if (issuerCommonName != null) {
@@ -689,7 +405,19 @@ public class Certificate extends UniquelyIdentifiedAndAudited implements Seriali
         this.trustedCa = trustedCa;
     }
 
-    public Boolean getTrustedCa() {
-        return trustedCa;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Certificate that = (Certificate) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

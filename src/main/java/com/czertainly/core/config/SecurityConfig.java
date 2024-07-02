@@ -6,6 +6,7 @@ import com.czertainly.core.security.authn.CzertainlyAuthenticationProvider;
 import com.czertainly.core.security.authz.ExternalFilterAuthorizationVoter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -47,22 +48,22 @@ public class SecurityConfig  {
                 .anyRequest().authenticated()
                 .accessDecisionManager(accessDecisionManager())
                 .and()
-                .exceptionHandling()
-                .accessDeniedHandler((request, response, accessDeniedException) -> {
-                    response.sendError(HttpServletResponse.SC_FORBIDDEN);
-                })
-                .authenticationEntryPoint((request, response, authException) -> {
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
-                })
-                .and()
-                .csrf().disable()
-                .cors().disable()
-                .httpBasic().disable()
-                .formLogin().disable()
-                .x509().disable()
+                .exceptionHandling(exceptionHandling -> exceptionHandling
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.sendError(HttpServletResponse.SC_FORBIDDEN);
+                        })
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                        })
+                )
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+                .x509(AbstractHttpConfigurer::disable)
                 .addFilterBefore(protocolValidationFilter, X509AuthenticationFilter.class)
                 .addFilterBefore(createCzertainlyAuthenticationFilter(), BasicAuthenticationFilter.class)
-                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         return http.build();
     }

@@ -1,6 +1,5 @@
 package com.czertainly.core.dao.repository;
 
-import com.czertainly.api.model.common.attribute.v2.AttributeType;
 import com.czertainly.core.security.authz.SecuredUUID;
 import com.czertainly.core.security.authz.SecurityFilter;
 import jakarta.persistence.criteria.*;

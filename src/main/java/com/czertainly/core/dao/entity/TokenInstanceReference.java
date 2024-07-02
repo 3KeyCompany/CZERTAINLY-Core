@@ -7,16 +7,22 @@ import com.czertainly.api.model.core.cryptography.token.TokenInstanceDto;
 import com.czertainly.api.model.core.cryptography.token.TokenInstanceStatusDetailDto;
 import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.ObjectAccessControlMapper;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "token_instance_reference")
 public class TokenInstanceReference extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<TokenInstanceDto>, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -36,6 +42,8 @@ public class TokenInstanceReference extends UniquelyIdentifiedAndAudited impleme
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "connector_uuid", insertable = false, updatable = false)
+    @ToString.Exclude
+    @JsonBackReference
     private Connector connector;
 
     @Column(name = "connector_uuid")
@@ -46,86 +54,12 @@ public class TokenInstanceReference extends UniquelyIdentifiedAndAudited impleme
 
     @OneToMany(mappedBy = "tokenInstanceReference", fetch = FetchType.LAZY)
     @JsonIgnore
+    @ToString.Exclude
     private Set<TokenProfile> tokenProfiles = new HashSet<>();
-
-    public String getTokenInstanceUuid() {
-        return tokenInstanceUuid;
-    }
-
-    public void setTokenInstanceUuid(String tokenInstanceUuid) {
-        this.tokenInstanceUuid = tokenInstanceUuid;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public TokenInstanceStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(TokenInstanceStatus status) {
-        this.status = status;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
-    public Connector getConnector() {
-        return connector;
-    }
 
     public void setConnector(Connector connector) {
         this.connector = connector;
         if (connector != null) this.connectorUuid = connector.getUuid();
-    }
-
-    public UUID getConnectorUuid() {
-        return connectorUuid;
-    }
-
-    public void setConnectorUuid(UUID connectorUuid) {
-        this.connectorUuid = connectorUuid;
-    }
-
-    public String getConnectorName() {
-        return connectorName;
-    }
-
-    public void setConnectorName(String connectorName) {
-        this.connectorName = connectorName;
-    }
-
-    public Set<TokenProfile> getTokenProfiles() {
-        return tokenProfiles;
-    }
-
-    public void setTokenProfiles(Set<TokenProfile> tokenProfiles) {
-        this.tokenProfiles = tokenProfiles;
-    }
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("tokenInstanceUuid", tokenInstanceUuid)
-                .append("name", name)
-                .append("status", status)
-                .append("kind", kind)
-                .append("connector", connector)
-                .append("connectorUuid", connectorUuid)
-                .append("connectorName", connectorName)
-                .append("tokenProfiles", tokenProfiles)
-                .append("uuid", uuid)
-                .toString();
     }
 
     @Override
@@ -160,5 +94,21 @@ public class TokenInstanceReference extends UniquelyIdentifiedAndAudited impleme
     @Override
     public NameAndUuidDto mapToAccessControlObjects() {
         return new NameAndUuidDto(uuid.toString(), name);
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        TokenInstanceReference that = (TokenInstanceReference) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

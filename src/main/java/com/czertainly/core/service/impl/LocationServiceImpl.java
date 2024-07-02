@@ -462,7 +462,7 @@ public class LocationServiceImpl implements LocationService {
         Certificate certificate = certificateService.getCertificateEntity(SecuredUUID.fromString(certificateUuid));
 
         if (certificate.getState().equals(CertificateState.REJECTED)) {
-            throw new ValidationException(ValidationError.create(String.format("Cannot push rejected certificate %s to location %s", certificate, location.getName())));
+            throw new ValidationException(ValidationError.create("Cannot push rejected certificate %s to location %s".formatted(certificate, location.getName())));
         }
 
         if (!location.isSupportMultipleEntries() && !location.getCertificates().isEmpty()) {

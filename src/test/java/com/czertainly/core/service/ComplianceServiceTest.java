@@ -17,6 +17,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.UUID;
+
 public class ComplianceServiceTest extends BaseSpringBootTest {
 
     private static final String RA_PROFILE_NAME = "testRaProfile1";
@@ -101,7 +103,7 @@ public class ComplianceServiceTest extends BaseSpringBootTest {
         complianceGroup.setName("testGroup");
         complianceGroup.setKind("default");
         complianceGroup.setDescription("Sample description");
-        complianceGroup.setUuid("e8965d90-f1fd-11ec-b939-0242ac120003");
+        complianceGroup.setUuid(UUID.fromString("e8965d90-f1fd-11ec-b939-0242ac120003"));
         complianceGroup.setConnectorUuid(connector.getUuid());
         complianceGroupRepository.save(complianceGroup);
 
@@ -110,7 +112,7 @@ public class ComplianceServiceTest extends BaseSpringBootTest {
         complianceRule.setKind("default");
         complianceRule.setName("Rule1");
         complianceRule.setDescription("Description");
-        complianceRule.setUuid("e8965d90-f1fd-11ec-b939-0242ac120002");
+        complianceRule.setUuid(UUID.fromString("e8965d90-f1fd-11ec-b939-0242ac120002"));
         complianceRule.setCertificateType(CertificateType.X509);
         complianceRule.setGroup(complianceGroup);
         complianceRuleRepository.save(complianceRule);

@@ -7,7 +7,6 @@ import com.czertainly.core.dao.entity.RaProfile;
 import com.czertainly.core.dao.repository.custom.CustomCertificateRepository;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -51,10 +50,6 @@ public interface CertificateRepository extends SecurityFilterRepository<Certific
 
     @Query("SELECT DISTINCT publicKeyAlgorithm FROM Certificate")
     List<String> findDistinctPublicKeyAlgorithm();
-
-    @Modifying
-    @Query("delete from Certificate u where u.uuid in ?1")
-    void deleteCertificateWithIds(List<String> uuids);
 
     Optional<Certificate> findByUserUuid(UUID userUuid);
 

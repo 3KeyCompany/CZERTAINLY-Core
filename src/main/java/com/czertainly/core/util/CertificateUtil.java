@@ -194,8 +194,8 @@ public class CertificateUtil {
 
         GeneralNames gns = null;
 
-        if (certificateRequest instanceof Pkcs10CertificateRequest) {
-            Attribute[] certAttributes = ((Pkcs10CertificateRequest) certificateRequest).getJcaObject().getAttributes();
+        if (certificateRequest instanceof Pkcs10CertificateRequest request) {
+            Attribute[] certAttributes = request.getJcaObject().getAttributes();
             for (Attribute attribute : certAttributes) {
                 if (attribute.getAttrType().equals(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)) {
                     Extensions extensions = Extensions.getInstance(attribute.getAttrValues().getObjectAt(0));
@@ -203,8 +203,8 @@ public class CertificateUtil {
                     break;
                 }
             }
-        } else if (certificateRequest instanceof CrmfCertificateRequest) {
-            Extensions extensions = Extensions.getInstance(((CrmfCertificateRequest) certificateRequest).getCertificateRequestMessage().getCertTemplate().getExtensions());
+        } else if (certificateRequest instanceof CrmfCertificateRequest request) {
+            Extensions extensions = Extensions.getInstance(request.getCertificateRequestMessage().getCertTemplate().getExtensions());
             gns = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
         }
 
@@ -234,7 +234,7 @@ public class CertificateUtil {
             DLSequence otherNameSeq = (DLSequence) GeneralName.getInstance(value).getName();
             var oidSeq = otherNameSeq.getObjectAt(0).toString();
             var valueSeq = ((DLTaggedObject) otherNameSeq.getObjectAt(1)).getBaseObject().toString();
-            return String.format("%s=%s", oidSeq, valueSeq);
+            return "%s=%s".formatted(oidSeq, valueSeq);
         }
         if (sanType == GeneralName.ediPartyName) {
             DLSequence ediPartySeq = (DLSequence) GeneralName.getInstance(value).getName();
@@ -242,7 +242,7 @@ public class CertificateUtil {
                 return value.toString();
             }
             return ediPartySeq.size() == 1 ? "Party=" + ediPartySeq.getObjectAt(0).toString()
-                    : String.format("Assigner=%s, Party=%s", ediPartySeq.getObjectAt(0).toString(), ediPartySeq.getObjectAt(1).toString());
+                    : "Assigner=%s, Party=%s".formatted(ediPartySeq.getObjectAt(0).toString(), ediPartySeq.getObjectAt(1).toString());
         }
 
         return value.toString();

@@ -8,14 +8,17 @@ import com.czertainly.core.util.ObjectAccessControlMapper;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "credential")
 public class Credential extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<CredentialDto>, ObjectAccessControlMapper<NameAndUuidDto> {
@@ -34,60 +37,6 @@ public class Credential extends UniquelyIdentifiedAndAudited implements Serializ
 
     @Column(name = "connector_name")
     private String connectorName;
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
-    public Boolean getEnabled() {
-        return enabled;
-    }
-
-    public void setEnabled(Boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    public UUID getConnectorUuid() {
-        return connectorUuid;
-    }
-
-    public void setConnectorUuid(UUID connectorUuid) {
-        this.connectorUuid = connectorUuid;
-    }
-
-    public String getConnectorName() {
-        return connectorName;
-    }
-
-    public void setConnectorName(String connectorName) {
-        this.connectorName = connectorName;
-    }
-
-    public CredentialDto mapToDtoSimple() {
-        CredentialDto dto = new CredentialDto();
-        dto.setUuid(this.uuid.toString());
-        dto.setName(this.name);
-        dto.setKind(this.kind);
-        dto.setEnabled(this.enabled);
-        dto.setConnectorName(this.connectorName);
-        if (this.connectorUuid != null) {
-            dto.setConnectorUuid(this.connectorUuid.toString());
-        }
-
-        return dto;
-    }
 
     @Override
     public CredentialDto mapToDto() {
@@ -118,24 +67,18 @@ public class Credential extends UniquelyIdentifiedAndAudited implements Serializ
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("name", name)
-                .append("type", kind)
-                .append("uuid", uuid)
-                .toString();
-    }
-
-    @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
         Credential that = (Credential) o;
-        return new EqualsBuilder().append(uuid, that.uuid).isEquals();
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
     @Override
-    public int hashCode() {
-        return new HashCodeBuilder(17, 37).append(uuid).toHashCode();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

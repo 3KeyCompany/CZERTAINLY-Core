@@ -4,20 +4,27 @@ import com.czertainly.api.model.common.attribute.v2.MetadataAttribute;
 import com.czertainly.api.model.core.discovery.DiscoveryCertificateDto;
 import com.czertainly.core.util.DtoMapper;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.proxy.HibernateProxy;
 import org.hibernate.type.SqlTypes;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "discovery_certificate")
 public class DiscoveryCertificate extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<DiscoveryCertificateDto> {
 
+    @Serial
     private static final long serialVersionUID = 9115753988094130017L;
 
     @Column(name = "common_name")
@@ -37,6 +44,7 @@ public class DiscoveryCertificate extends UniquelyIdentifiedAndAudited implement
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "certificate_content_id", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private CertificateContent certificateContent;
 
     @Column(name = "certificate_content_id", nullable = false)
@@ -44,6 +52,7 @@ public class DiscoveryCertificate extends UniquelyIdentifiedAndAudited implement
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "discovery_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private DiscoveryHistory discovery;
 
     @Column(name = "discovery_uuid", nullable = false)
@@ -79,63 +88,9 @@ public class DiscoveryCertificate extends UniquelyIdentifiedAndAudited implement
         return dto;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("commonName", commonName).append("serialNumber", serialNumber).toString();
-    }
-
-    public String getCommonName() {
-        return commonName;
-    }
-
-    public void setCommonName(String commonName) {
-        this.commonName = commonName;
-    }
-
-    public String getSerialNumber() {
-        return serialNumber;
-    }
-
-    public void setSerialNumber(String serialNumber) {
-        this.serialNumber = serialNumber;
-    }
-
-    public String getIssuerCommonName() {
-        return issuerCommonName;
-    }
-
-    public void setIssuerCommonName(String issuerCommonName) {
-        this.issuerCommonName = issuerCommonName;
-    }
-
-    public Date getNotBefore() {
-        return notBefore;
-    }
-
-    public void setNotBefore(Date notBefore) {
-        this.notBefore = notBefore;
-    }
-
-    public Date getNotAfter() {
-        return notAfter;
-    }
-
-    public void setNotAfter(Date notAfter) {
-        this.notAfter = notAfter;
-    }
-
-    public CertificateContent getCertificateContent() {
-        return certificateContent;
-    }
-
     public void setCertificateContent(CertificateContent certificateContent) {
         this.certificateContent = certificateContent;
         this.certificateContentId = certificateContent.getId();
-    }
-
-    public DiscoveryHistory getDiscovery() {
-        return discovery;
     }
 
     public void setDiscovery(DiscoveryHistory discovery) {
@@ -143,37 +98,19 @@ public class DiscoveryCertificate extends UniquelyIdentifiedAndAudited implement
         this.discoveryUuid = discovery.getUuid();
     }
 
-    public Long getCertificateContentId() {
-        return certificateContentId;
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        DiscoveryCertificate that = (DiscoveryCertificate) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
     }
 
-    public void setCertificateContentId(Long certificateContentId) {
-        this.certificateContentId = certificateContentId;
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
-
-    public UUID getDiscoveryUuid() {
-        return discoveryUuid;
-    }
-
-    public void setDiscoveryUuid(String discoveryUuid) {
-        this.discoveryUuid = UUID.fromString(discoveryUuid);
-    }
-
-    public boolean isNewlyDiscovered() {
-        return newlyDiscovered;
-    }
-
-    public void setNewlyDiscovered(boolean newlyDiscovered) {
-        this.newlyDiscovered = newlyDiscovered;
-    }
-
-    public List<MetadataAttribute> getMeta() {
-        return meta;
-    }
-
-    public void setMeta(List<MetadataAttribute> meta) {
-        this.meta = meta;
-    }
-
-
 }

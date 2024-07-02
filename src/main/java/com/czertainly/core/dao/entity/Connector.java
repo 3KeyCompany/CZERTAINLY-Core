@@ -11,20 +11,27 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.MetaDefinitions;
 import com.czertainly.core.util.ObjectAccessControlMapper;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "connector")
 public class Connector extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<ConnectorDto>, ObjectAccessControlMapper<NameAndUuidDto> {
+
+    @Serial
     private static final long serialVersionUID = -4057975339123024975L;
 
     @Column(name = "name")
@@ -36,7 +43,7 @@ public class Connector extends UniquelyIdentifiedAndAudited implements Serializa
     @Column(name = "auth_type")
     @Enumerated(EnumType.STRING)
     private AuthType authType;
-    
+
     @Column(name = "auth_attributes")
     private String authAttributes;
 
@@ -45,95 +52,29 @@ public class Connector extends UniquelyIdentifiedAndAudited implements Serializa
     private ConnectorStatus status;
 
     @OneToMany(fetch = FetchType.LAZY, mappedBy = "connector")
+    @ToString.Exclude
+    @JsonManagedReference
     private Set<Connector2FunctionGroup> functionGroups = new HashSet<>();
 
     @OneToMany(mappedBy = "connectorUuid", fetch = FetchType.LAZY)
     @JsonIgnore
+    @ToString.Exclude
     private Set<Credential> credentials = new HashSet<>();
 
     @OneToMany(mappedBy = "connector", fetch = FetchType.LAZY)
     @JsonIgnore
+    @ToString.Exclude
     private Set<AuthorityInstanceReference> authorityInstanceReferences = new HashSet<>();
 
     @OneToMany(mappedBy = "connector", fetch = FetchType.LAZY)
     @JsonIgnore
+    @ToString.Exclude
     private Set<EntityInstanceReference> entityInstanceReferences = new HashSet<>();
 
     @OneToMany(mappedBy = "connectorUuid", fetch = FetchType.LAZY)
     @JsonIgnore
+    @ToString.Exclude
     private Set<TokenInstanceReference> tokenInstanceReferences = new HashSet<>();
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getUrl() {
-        return url;
-    }
-
-    public void setUrl(String url) {
-        this.url = url;
-    }
-
-    public AuthType getAuthType() {
-        return authType;
-    }
-
-    public void setAuthType(AuthType authType) {
-        this.authType = authType;
-    }
-
-    public String getAuthAttributes() {
-        return authAttributes;
-    }
-
-    public void setAuthAttributes(String authAttributes) {
-        this.authAttributes = authAttributes;
-    }
-
-    public ConnectorStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(ConnectorStatus status) {
-        this.status = status;
-    }
-
-    public Set<Connector2FunctionGroup> getFunctionGroups() {
-        return functionGroups;
-    }
-
-    public void setFunctionGroups(Set<Connector2FunctionGroup> functionGroups) {
-        this.functionGroups = functionGroups;
-    }
-
-    public Set<Credential> getCredentials() {
-        return credentials;
-    }
-
-    public void setCredentials(Set<Credential> credentials) {
-        this.credentials = credentials;
-    }
-
-    public Set<AuthorityInstanceReference> getAuthorityInstanceReferences() {
-        return authorityInstanceReferences;
-    }
-
-    public void setAuthorityInstanceReferences(Set<AuthorityInstanceReference> authorityInstanceReferences) {
-        this.authorityInstanceReferences = authorityInstanceReferences;
-    }
-
-    public Set<EntityInstanceReference> getEntityInstanceReferences() {
-        return entityInstanceReferences;
-    }
-
-    public Set<TokenInstanceReference> getTokenInstanceReferences() {
-        return tokenInstanceReferences;
-    }
 
     @Override
     public ConnectorDto mapToDto() {
@@ -158,30 +99,18 @@ public class Connector extends UniquelyIdentifiedAndAudited implements Serializa
     }
 
     @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("uuid", uuid)
-                .append("name", name)
-                .append("authType", authType)
-                .append("authAttributes", authAttributes)
-                .append("url", url)
-                .append("status", status)
-                .append("functionGroups", functionGroups)
-                .toString();
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Connector connector = (Connector) o;
+        return getUuid() != null && Objects.equals(getUuid(), connector.getUuid());
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
-        Connector that = (Connector) o;
-        return new EqualsBuilder().append(uuid, that.uuid).isEquals();
-    }
-
-    @Override
-    public int hashCode() {
-        return new HashCodeBuilder(17, 37).append(uuid).toHashCode();
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }

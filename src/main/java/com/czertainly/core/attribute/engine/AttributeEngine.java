@@ -262,7 +262,7 @@ public class AttributeEngine {
         boolean newCustomAttribute = attributeDefinition == null;
         if (newCustomAttribute) {
             attributeDefinition = new AttributeDefinition();
-            attributeDefinition.setUuid(customAttribute.getUuid());
+            attributeDefinition.setUuid(UUID.fromString(customAttribute.getUuid()));
             attributeDefinition.setName(customAttribute.getName());
             attributeDefinition.setType(AttributeType.CUSTOM);
             attributeDefinition.setAttributeUuid(attributeDefinition.getUuid());

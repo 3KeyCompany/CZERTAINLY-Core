@@ -236,8 +236,8 @@ public class ExternalMethodAuthorizationVoter extends AbstractExternalAuthorizat
             return this.opaClient.checkResourceAccess(OpaPolicy.METHOD.policyName, resource, principal, new OpaRequestDetails(null));
         } catch (Exception e) {
             logger.error(
-                    String.format(
-                            "An error occurred during the authorization request to the OPA policy '%s'.",
+                    
+                            "An error occurred during the authorization request to the OPA policy '%s'.".formatted(
                             OpaPolicy.METHOD.policyName),
                     e
             );
@@ -250,9 +250,9 @@ public class ExternalMethodAuthorizationVoter extends AbstractExternalAuthorizat
         Optional<Class<ParentUUIDGetter>> parentUUIDGetterClass = attributes.stream()
                 .filter(att -> {
                     Object value = att.getAttributeValue();
-                    return (value instanceof Class<?>) &&
-                            ParentUUIDGetter.class.isAssignableFrom((Class<?>) value) &&
-                            !NoOpParentUUIDGetter.class.isAssignableFrom((Class<?>) value);
+                    return (value instanceof Class<?> c) &&
+                            ParentUUIDGetter.class.isAssignableFrom(c) &&
+                            !NoOpParentUUIDGetter.class.isAssignableFrom(c);
                 })
                 .map(att -> (Class<ParentUUIDGetter>) att.getAttributeValue())
                 .findFirst();
@@ -273,7 +273,7 @@ public class ExternalMethodAuthorizationVoter extends AbstractExternalAuthorizat
                 .forEach(arg -> uuids.add((SecuredUUID) arg));
 
         Arrays.stream(methodInvocation.getArguments())
-                .filter(arg -> arg instanceof List && !((List<?>) arg).isEmpty() && ((List<?>) arg).get(0) instanceof SecuredUUID && !(((List<?>) arg).get(0) instanceof SecuredParentUUID))
+                .filter(arg -> arg instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof SecuredUUID && !(l.get(0) instanceof SecuredParentUUID))
                 .forEach(arg -> uuids.addAll(((List<SecuredUUID>) arg)));
 
         return uuids;
@@ -288,7 +288,7 @@ public class ExternalMethodAuthorizationVoter extends AbstractExternalAuthorizat
                 .forEach(arg -> uuids.add((SecuredParentUUID) arg));
 
         Arrays.stream(methodInvocation.getArguments())
-                .filter(arg -> arg instanceof List && !((List<?>) arg).isEmpty() && ((List<?>) arg).get(0) instanceof SecuredParentUUID)
+                .filter(arg -> arg instanceof List<?> l && !l.isEmpty() && l.get(0) instanceof SecuredParentUUID)
                 .forEach(arg -> uuids.addAll(((List<SecuredParentUUID>) arg)));
 
         return uuids;

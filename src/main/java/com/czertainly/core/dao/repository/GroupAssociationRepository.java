@@ -14,9 +14,13 @@ import java.util.UUID;
 @Repository
 public interface GroupAssociationRepository extends JpaRepository<GroupAssociation, UUID> {
     List<GroupAssociation> findByResourceAndObjectUuid(Resource resource, UUID objectUuid);
+
     boolean existsByResourceAndObjectUuidAndGroupUuid(Resource resource, UUID objectUuid, UUID groupUuid);
+
     long deleteByGroupUuid(UUID groupUuid);
+
     long deleteByResourceAndObjectUuid(Resource resource, UUID objectUuid);
+
     long deleteByResourceAndObjectUuidAndGroupUuid(Resource resource, UUID objectUuid, UUID groupUuid);
 
 }

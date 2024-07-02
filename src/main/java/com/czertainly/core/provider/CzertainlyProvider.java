@@ -21,7 +21,7 @@ public class CzertainlyProvider extends Provider {
     }
 
     public static CzertainlyProvider getInstance(String name, boolean registerProvider, CryptographicOperationsApiClient apiClient) {
-        String instanceName = String.format("%s-%s", PROVIDER_NAME, name);
+        String instanceName = "%s-%s".formatted(PROVIDER_NAME, name);
         CzertainlyProvider provider = new CzertainlyProvider(instanceName, apiClient);
 
         if (registerProvider) {

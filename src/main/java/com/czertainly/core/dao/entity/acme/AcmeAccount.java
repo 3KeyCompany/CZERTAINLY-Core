@@ -11,15 +11,19 @@ import com.czertainly.core.util.DtoMapper;
 import com.czertainly.core.util.MetaDefinitions;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.*;
+import org.hibernate.proxy.HibernateProxy;
 
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
+@Getter
+@Setter
+@ToString
+@RequiredArgsConstructor
 @Entity
 @Table(name = "acme_account")
 public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Serializable, DtoMapper<Account> {
@@ -27,7 +31,7 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
     @Column(name="account_id")
     private String accountId;
 
-    // length should be enough for more than 4096 bit RSA keys
+    // length should be enough for more than 4096-bit RSA keys
     @Column(name="public_key", length = 1000)
     private String publicKey;
 
@@ -49,10 +53,12 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
 
     @JsonBackReference
     @OneToMany(mappedBy = "acmeAccount", fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Set<AcmeOrder> orders = new HashSet<>();
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ra_profile_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private RaProfile raProfile;
 
     @Column(name = "ra_profile_uuid", nullable = false)
@@ -60,6 +66,7 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "acme_profile_uuid", nullable = false, insertable = false, updatable = false)
+    @ToString.Exclude
     private AcmeProfile acmeProfile;
 
     @Column(name = "acme_profile_uuid", nullable = false)
@@ -90,23 +97,23 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
         account.setSuccessfulOrders(orders.stream()
                 .filter(acmeOrder -> acmeOrder.getStatus()
                         .equals(OrderStatus.READY))
-                .collect(Collectors.toList()).size());
+                .toList().size());
         account.setPendingOrders(orders.stream()
                 .filter(acmeOrder -> acmeOrder.getStatus()
                         .equals(OrderStatus.PENDING))
-                .collect(Collectors.toList()).size());
+                .toList().size());
         account.setFailedOrders(orders.stream()
                 .filter(acmeOrder -> acmeOrder.getStatus()
                         .equals(OrderStatus.INVALID))
-                .collect(Collectors.toList()).size());
+                .toList().size());
         account.setProcessingOrders(orders.stream()
                 .filter(acmeOrder -> acmeOrder.getStatus()
                         .equals(OrderStatus.PROCESSING))
-                .collect(Collectors.toList()).size());
+                .toList().size());
         account.setValidOrders(orders.stream()
                 .filter(acmeOrder -> acmeOrder.getStatus()
                         .equals(OrderStatus.VALID))
-                .collect(Collectors.toList()).size());
+                .toList().size());
 
         account.setStatus(status);
         account.setTermsOfServiceAgreed(termsOfServiceAgreed);
@@ -131,79 +138,13 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
         return account;
     }
 
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.SHORT_PREFIX_STYLE)
-                .append("accountId", accountId)
-                .append("raProfileName", raProfile.getName()).toString();
-
-    }
-
-    public String getAccountId() {
-        return accountId;
-    }
-
-    public void setAccountId(String accountId) {
-        this.accountId = accountId;
-    }
-
-    public AccountStatus getStatus() {
-        return status;
-    }
-
-    public void setStatus(AccountStatus status) {
-        this.status = status;
-    }
-
-    public String getContact() {
-        return contact;
-    }
-
-    public void setContact(String contact) {
-        this.contact = contact;
-    }
-
-    public Boolean isTermsOfServiceAgreed() {
-        return termsOfServiceAgreed;
-    }
-
-    public void setTermsOfServiceAgreed(Boolean termsOfServiceAgreed) {
-        this.termsOfServiceAgreed = termsOfServiceAgreed;
-    }
-
-    public String getPublicKey() {
-        return publicKey;
-    }
-
-    public void setPublicKey(String publicKey) {
-        this.publicKey = publicKey;
-    }
-
-    public boolean isDefaultRaProfile() {
-        return isDefaultRaProfile;
-    }
-
     public void setDefaultRaProfile(boolean defaultRaProfile) {
         isDefaultRaProfile = defaultRaProfile;
     }
 
-    public Set<AcmeOrder> getOrders() {
-        return orders;
-    }
-
-    public void setOrders(Set<AcmeOrder> orders) {
-        this.orders = orders;
-    }
-
-    public RaProfile getRaProfile() { return raProfile; }
-
     public void setRaProfile(RaProfile raProfile) {
         this.raProfile = raProfile;
         this.raProfileUuid = raProfile.getUuid();
-    }
-
-    public AcmeProfile getAcmeProfile() {
-        return acmeProfile;
     }
 
     public void setAcmeProfile(AcmeProfile acmeProfile) {
@@ -219,27 +160,27 @@ public class AcmeAccount extends UniquelyIdentifiedAndAudited implements Seriali
         isEnabled = enabled;
     }
 
-    public Boolean getTermsOfServiceAgreed() {
-        return termsOfServiceAgreed;
-    }
-
-    public UUID getRaProfileUuid() {
-        return raProfileUuid;
-    }
-
-    public void setRaProfileUuid(UUID raProfileUuid) {
-        this.raProfileUuid = raProfileUuid;
-    }
-
     public void setRaProfileUuid(String raProfileUuid) {
         this.raProfileUuid = UUID.fromString(raProfileUuid);
     }
 
-    public UUID getAcmeProfileUuid() {
-        return acmeProfileUuid;
-    }
-
     public void setAcmeProfileUuid(String acmeProfileUuid) {
         this.acmeProfileUuid = UUID.fromString(acmeProfileUuid);
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        AcmeAccount that = (AcmeAccount) o;
+        return getUuid() != null && Objects.equals(getUuid(), that.getUuid());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
     }
 }
