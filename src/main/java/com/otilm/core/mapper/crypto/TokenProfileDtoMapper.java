@@ -17,7 +17,7 @@ public final class TokenProfileDtoMapper {
         dto.setDescription(model.description());
         dto.setTokenInstanceName(model.tokenInstanceName());
         dto.setTokenInstanceUuid(model.tokenInstanceReferenceUuid().toString());
-        dto.setTokenInstanceStatus(model.tokenInstanceStatus());
+        dto.setTokenInstanceStatus(model.tokenInstance().status());
         dto.setUsages(model.usages());
         return dto;
     }
@@ -30,7 +30,7 @@ public final class TokenProfileDtoMapper {
         dto.setDescription(model.description());
         dto.setTokenInstanceName(model.tokenInstanceName());
         dto.setTokenInstanceUuid(model.tokenInstanceReferenceUuid().toString());
-        dto.setTokenInstanceStatus(model.tokenInstanceStatus());
+        dto.setTokenInstanceStatus(model.tokenInstance().status());
         dto.setUsages(model.usages());
         return dto;
     }

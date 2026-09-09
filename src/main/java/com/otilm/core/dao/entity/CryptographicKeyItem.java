@@ -2,18 +2,17 @@ package com.otilm.core.dao.entity;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.otilm.api.model.client.cryptography.key.KeyCompromiseReason;
+import com.otilm.api.model.common.attribute.common.MetadataAttribute;
 import com.otilm.api.model.common.enums.BitMaskEnum;
 import com.otilm.api.model.common.enums.cryptography.KeyAlgorithm;
 import com.otilm.api.model.common.enums.cryptography.KeyFormat;
 import com.otilm.api.model.common.enums.cryptography.KeyType;
-import com.otilm.api.model.connector.cryptography.key.value.KeyValue;
 import com.otilm.api.model.core.compliance.ComplianceStatus;
 import com.otilm.api.model.core.cryptography.key.KeyItemDetailDto;
 import com.otilm.api.model.core.cryptography.key.KeyItemDto;
 import com.otilm.api.model.core.cryptography.key.KeyState;
 import com.otilm.api.model.core.cryptography.key.KeyUsage;
 import com.otilm.core.model.compliance.ComplianceResultDto;
-import com.otilm.core.util.CryptographicHelper;
 import com.otilm.core.util.DtoMapper;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -66,6 +65,12 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Complian
 
     @Column(name = "key_reference_uuid")
     private UUID keyReferenceUuid;
+
+    /** Opaque provider handle returned unchanged in subsequent v2 key operations. */
+    @Column(name = "key_meta", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @ToString.Exclude
+    private List<MetadataAttribute> keyMeta;
 
     @Column(name = "type")
     @Enumerated(EnumType.STRING)
@@ -128,10 +133,6 @@ public class CryptographicKeyItem extends UniquelyIdentified implements Complian
         if (key != null) {
             this.keyUuid = key.getUuid();
         }
-    }
-
-    public void setKeyData(KeyFormat keyFormat, KeyValue value) {
-        this.keyData = CryptographicHelper.serializeKeyValue(keyFormat, value);
     }
 
     public List<KeyUsage> getUsage() {

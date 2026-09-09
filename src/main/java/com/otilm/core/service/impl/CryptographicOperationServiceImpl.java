@@ -39,7 +39,8 @@ import com.otilm.core.dao.entity.TokenInstanceReference;
 import com.otilm.core.dao.repository.CryptographicKeyItemRepository;
 import com.otilm.core.dao.repository.CryptographicKeyRepository;
 import com.otilm.core.model.auth.ResourceAction;
-import com.otilm.core.model.crypto.CryptographicKeyItemModel;
+import com.otilm.core.model.crypto.CryptographicKeyItemOperationModel;
+import com.otilm.core.model.crypto.RemoteKeyReference;
 import com.otilm.core.security.authz.AuthorizationEnforcer;
 import com.otilm.core.security.authz.ExternalAuthorization;
 import com.otilm.core.security.authz.SecuredParentUUID;
@@ -172,7 +173,7 @@ public class CryptographicOperationServiceImpl
             UUID uuid, UUID keyItemUuid, CipherDataRequestDto request) throws ConnectorException, NotFoundException {
         authorizationEnforcer.enforce(Resource.TOKEN_PROFILE, ResourceAction.DETAIL, tokenProfileUuid);
         logger.info("Request to encrypt the data using the key: {} and data: {}", keyItemUuid, request);
-        CryptographicKeyItemModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
+        CryptographicKeyItemOperationModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
         verifyActive(key.keyState(), key.enabled());
         logger.debug("Key details: {}", key);
         if (request.getCipherData() == null) {
@@ -192,12 +193,12 @@ public class CryptographicOperationServiceImpl
         requestDto.setCipherAttributes(request.getCipherAttributes());
         logger.debug("Request to the connector: {}", requestDto);
         try {
+            String keyReference = requireV1KeyReference(key);
             ApiClientConnectorInfo connectorDto = connectorService.getConnectorForApiClient(key.connectorUuid());
             CryptographicOperationsSyncApiClient apiClient = connectorApiFactory
                     .getCryptographicOperationsApiClient(connectorDto);
             com.otilm.api.model.connector.cryptography.operations.EncryptDataResponseDto response = apiClient
-                    .encryptData(connectorDto, key.tokenInstanceUuid().toString(), key.keyReferenceUuid().toString(),
-                            requestDto);
+                    .encryptData(connectorDto, key.tokenInstanceUuid().toString(), keyReference, requestDto);
             eventHistoryService
                     .addEventHistory(KeyEvent.ENCRYPT, KeyEventStatus.SUCCESS, "Encryption of data success ", null,
                             key.keyItemUuid());
@@ -228,7 +229,7 @@ public class CryptographicOperationServiceImpl
             UUID uuid, UUID keyItemUuid, CipherDataRequestDto request) throws ConnectorException, NotFoundException {
         authorizationEnforcer.enforce(Resource.TOKEN_PROFILE, ResourceAction.DETAIL, tokenProfileUuid);
         logger.info("Decrypting using the key: {} and data: {}", keyItemUuid, request);
-        CryptographicKeyItemModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
+        CryptographicKeyItemOperationModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
         verifyActive(key.keyState(), key.enabled());
         logger.debug("Key details: {}", key);
         if (request.getCipherData() == null) {
@@ -248,12 +249,12 @@ public class CryptographicOperationServiceImpl
         requestDto.setCipherAttributes(request.getCipherAttributes());
         logger.debug("Request to the connector: {}", requestDto);
         try {
+            String keyReference = requireV1KeyReference(key);
             ApiClientConnectorInfo connectorDto = connectorService.getConnectorForApiClient(key.connectorUuid());
             CryptographicOperationsSyncApiClient apiClient = connectorApiFactory
                     .getCryptographicOperationsApiClient(connectorDto);
             com.otilm.api.model.connector.cryptography.operations.DecryptDataResponseDto response = apiClient
-                    .decryptData(connectorDto, key.tokenInstanceUuid().toString(), key.keyReferenceUuid().toString(),
-                            requestDto);
+                    .decryptData(connectorDto, key.tokenInstanceUuid().toString(), keyReference, requestDto);
             eventHistoryService
                     .addEventHistory(KeyEvent.DECRYPT, KeyEventStatus.SUCCESS, "Decryption of data success ", null,
                             key.keyItemUuid());
@@ -300,7 +301,7 @@ public class CryptographicOperationServiceImpl
             UUID keyItemUuid, SignDataRequestDto request) throws ConnectorException, NotFoundException {
         authorizationEnforcer.enforce(Resource.TOKEN_PROFILE, ResourceAction.DETAIL, tokenProfileUuid);
         logger.info("Signing the data: {} using the key: {}", request, keyItemUuid);
-        CryptographicKeyItemModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
+        CryptographicKeyItemOperationModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
         try {
             SignDataResponseDto response = executeSignData(key, request);
             eventHistoryService
@@ -323,11 +324,11 @@ public class CryptographicOperationServiceImpl
             throws ConnectorException, NotFoundException {
         authorizationEnforcer.enforce(Resource.TOKEN_PROFILE, ResourceAction.DETAIL, tokenProfileUuid);
         logger.info("Signing the data (no event history): {} using the key: {}", request, keyItemUuid);
-        CryptographicKeyItemModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
+        CryptographicKeyItemOperationModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
         return executeSignData(key, request);
     }
 
-    private SignDataResponseDto executeSignData(CryptographicKeyItemModel key, SignDataRequestDto request)
+    private SignDataResponseDto executeSignData(CryptographicKeyItemOperationModel key, SignDataRequestDto request)
             throws ConnectorException, NotFoundException {
         verifyActive(key.keyState(), key.enabled());
         logger.debug("Key details: {}", key);
@@ -348,12 +349,12 @@ public class CryptographicOperationServiceImpl
             return signatureRequestData;
         }).toList());
         logger.debug("Request to the connector: {}", requestDto);
+        String keyReference = requireV1KeyReference(key);
         ApiClientConnectorInfo connectorDto = connectorService.getConnectorForApiClient(key.connectorUuid());
         CryptographicOperationsSyncApiClient apiClient = connectorApiFactory
                 .getCryptographicOperationsApiClient(connectorDto);
         com.otilm.api.model.connector.cryptography.operations.SignDataResponseDto response = apiClient
-                .signData(connectorDto, key.tokenInstanceUuid().toString(), key.keyReferenceUuid().toString(),
-                        requestDto);
+                .signData(connectorDto, key.tokenInstanceUuid().toString(), keyReference, requestDto);
         SignDataResponseDto responseDto = new SignDataResponseDto();
         if (response.getSignatures() != null) {
             responseDto.setSignatures(response.getSignatures().stream().map(e -> {
@@ -375,7 +376,7 @@ public class CryptographicOperationServiceImpl
             UUID uuid, UUID keyItemUuid, VerifyDataRequestDto request) throws ConnectorException, NotFoundException {
         authorizationEnforcer.enforce(Resource.TOKEN_PROFILE, ResourceAction.DETAIL, tokenProfileUuid);
         logger.info("Request to verify data: {} for the key: {}", request, keyItemUuid);
-        CryptographicKeyItemModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
+        CryptographicKeyItemOperationModel key = cryptographicKeyService.getKeyItemModel(keyItemUuid);
         verifyActive(key.keyState(), key.enabled());
         logger.debug("Key details: {}", key);
         if (request.getSignatures() == null) {
@@ -404,12 +405,12 @@ public class CryptographicOperationServiceImpl
         }).toList());
         logger.debug("Request to the connector: {}", requestDto);
         try {
+            String keyReference = requireV1KeyReference(key);
             ApiClientConnectorInfo connectorDto = connectorService.getConnectorForApiClient(key.connectorUuid());
             CryptographicOperationsSyncApiClient apiClient = connectorApiFactory
                     .getCryptographicOperationsApiClient(connectorDto);
             com.otilm.api.model.connector.cryptography.operations.VerifyDataResponseDto response = apiClient
-                    .verifyData(connectorDto, key.tokenInstanceUuid().toString(), key.keyReferenceUuid().toString(),
-                            requestDto);
+                    .verifyData(connectorDto, key.tokenInstanceUuid().toString(), keyReference, requestDto);
             eventHistoryService
                     .addEventHistory(KeyEvent.VERIFY, KeyEventStatus.SUCCESS, "Verification of data completed ", null,
                             key.keyItemUuid());
@@ -538,6 +539,14 @@ public class CryptographicOperationServiceImpl
         verifyActive(publicKeyItem.getState(), publicKeyItem.isEnabled());
 
         return Map.of(KeyType.PUBLIC_KEY, publicKeyItem, KeyType.PRIVATE_KEY, privateKeyItem);
+    }
+
+    private static String requireV1KeyReference(CryptographicKeyItemOperationModel key) throws ConnectorException {
+        if (key.reference() instanceof RemoteKeyReference.UuidReference reference && reference.uuid() != null) {
+            return reference.uuid().toString();
+        }
+        throw new ConnectorException(
+                "This cryptographic operation requires a v1 remote key UUID; metadata references are not supported.");
     }
 
     private static void verifyActive(KeyState state, boolean enabled) {

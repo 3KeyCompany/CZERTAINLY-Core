@@ -8,6 +8,7 @@ import com.otilm.api.exception.ValidationError;
 import com.otilm.api.exception.ValidationException;
 import com.otilm.api.model.client.attribute.RequestAttribute;
 import com.otilm.api.model.client.certificate.SearchFilterRequestDto;
+import com.otilm.api.model.client.cryptography.key.KeyRequestType;
 import com.otilm.api.model.client.cryptography.tokenprofile.AddTokenProfileRequestDto;
 import com.otilm.api.model.client.cryptography.tokenprofile.EditTokenProfileRequestDto;
 import com.otilm.api.model.common.NameAndUuidDto;
@@ -35,6 +36,7 @@ import com.otilm.core.security.authz.SecurityFilter;
 import com.otilm.core.service.TokenInstanceInternalService;
 import com.otilm.core.service.TokenProfileExternalService;
 import com.otilm.core.service.TokenProfileInternalService;
+import com.otilm.core.service.handler.token.TokenProviderAdapterFactory;
 import com.otilm.core.service.writer.TokenProfileWriter;
 import java.util.List;
 import java.util.Optional;
@@ -55,6 +57,7 @@ public class TokenProfileServiceImpl implements TokenProfileExternalService, Tok
     private AttributeEngine attributeEngine;
     private TokenProfileRepository tokenProfileRepository;
     private TokenInstanceReferenceRepository tokenInstanceReferenceRepository;
+    private TokenProviderAdapterFactory tokenProviderAdapterFactory;
     private TokenProfileWriter tokenProfileWriter;
 
     @Autowired
@@ -85,6 +88,23 @@ public class TokenProfileServiceImpl implements TokenProfileExternalService, Tok
     @Autowired
     public void setAuthorizationEnforcer(AuthorizationEnforcer authorizationEnforcer) {
         this.authorizationEnforcer = authorizationEnforcer;
+    }
+
+    @Autowired
+    public void setTokenProviderAdapterFactory(TokenProviderAdapterFactory tokenProviderAdapterFactory) {
+        this.tokenProviderAdapterFactory = tokenProviderAdapterFactory;
+    }
+
+    @Override
+    @ExternalAuthorization(resource = Resource.TOKEN_PROFILE, action = ResourceAction.MEMBERS,
+            parentResource = Resource.TOKEN, parentAction = ResourceAction.MEMBERS)
+    public List<KeyRequestType> listSupportedKeyRequestTypes(SecuredParentUUID tokenInstanceUuid,
+            SecuredUUID tokenProfileUuid) throws NotFoundException, ConnectorException {
+        TokenProfileFullModel tokenProfile = findTokenProfile(tokenInstanceUuid.getValue(),
+                tokenProfileUuid.getValue());
+        return this.tokenProviderAdapterFactory
+                .forToken(tokenProfile.tokenInstance())
+                .listSupportedKeyRequestTypes(tokenProfile);
     }
 
     @Override
