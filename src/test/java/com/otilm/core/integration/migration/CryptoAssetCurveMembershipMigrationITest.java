@@ -18,7 +18,7 @@ import org.springframework.core.io.ClassPathResource;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Runs {@code V202609101000__crypto_asset_curve_membership.sql} over rows written in the shape the column had before
+ * Runs {@code V202609141000__crypto_asset_curve_membership.sql} over rows written in the shape the column had before
  * it, and asserts what the conversion did to them.
  *
  * <p>
@@ -32,7 +32,7 @@ class CryptoAssetCurveMembershipMigrationITest extends BaseSpringBootTest {
 
     private static final String INVENTORY_RESOURCE = "db/migration/V202608271000__crypto_asset_inventory.sql";
 
-    private static final String CURVE_RESOURCE = "db/migration/V202609101000__crypto_asset_curve_membership.sql";
+    private static final String CURVE_RESOURCE = "db/migration/V202609141000__crypto_asset_curve_membership.sql";
 
     private static final String SCRATCH_SCHEMA = "crypto_asset_curve_migration_check";
 
