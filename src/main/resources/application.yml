@@ -420,6 +420,13 @@ cbom:
     overlap: ${CBOM_SYNC_OVERLAP:60s}
     # An entry that could not be stored is retried on this many later runs, then recorded as permanently skipped.
     skipped-retry-runs: ${CBOM_SYNC_SKIPPED_RETRY_RUNS:3}
+    # Assets written per ingest transaction. Bounds how long one ingest holds the alias advisory lock and its row locks.
+    asset-batch-size: ${CBOM_SYNC_ASSET_BATCH_SIZE:100}
+    # CBOMs one run ingests from the pending work list (crashed ingests, earlier failures, documents uploaded through
+    # Core's own API), on top of the ones the same run's feed pass stored. 0 disables the pass.
+    max-ingest-documents: ${CBOM_SYNC_MAX_INGEST_DOCUMENTS:50}
+    # How long a CBOM whose ingest is IN_PROGRESS or FAILED is left untouched before a run offers it again.
+    ingest-retry-after: ${CBOM_SYNC_INGEST_RETRY_AFTER:30m}
 
 signing-record:
   outbox:

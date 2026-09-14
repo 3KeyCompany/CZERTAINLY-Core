@@ -32,6 +32,8 @@ import com.otilm.core.dao.repository.CbomRepository;
 import com.otilm.core.dao.repository.ScheduledJobHistoryRepository;
 import com.otilm.core.dao.repository.ScheduledJobsRepository;
 import com.otilm.core.dao.repository.cbom.CbomSyncSkipRepository;
+import com.otilm.core.dao.repository.cbom.CryptoAssetRepository;
+import com.otilm.core.dao.repository.cbom.CryptoAssetSourceRepository;
 import com.otilm.core.enums.FilterField;
 import com.otilm.core.model.cbom.BomEntryDto;
 import com.otilm.core.model.cbom.BomVersionDto;
@@ -63,6 +65,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
@@ -82,6 +85,14 @@ import static org.mockito.Mockito.when;
 class CbomServiceITest extends BaseSpringBootTest {
 
     private static final String CONTENT_TYPE = "application/vnd.cyclonedx+json";
+
+    /** Two components the extractor keys as distinct algorithm assets. */
+    private static final String TWO_ALGORITHM_COMPONENTS = """
+            [{"type":"cryptographic-asset","name":"AES-256",
+              "cryptoProperties":{"assetType":"algorithm","algorithmProperties":{}}},
+             {"type":"cryptographic-asset","name":"RSA-2048",
+              "cryptoProperties":{"assetType":"algorithm","algorithmProperties":{}}}]
+            """;
 
     private static final String BOM_ENTRY_JSON = """
             {
@@ -120,6 +131,12 @@ class CbomServiceITest extends BaseSpringBootTest {
     private CbomSyncSkipRepository skipRepository;
 
     @Autowired
+    private CryptoAssetRepository cryptoAssetRepository;
+
+    @Autowired
+    private CryptoAssetSourceRepository cryptoAssetSourceRepository;
+
+    @Autowired
     private CbomAssetSyncStateWriter syncStateWriter;
 
     @Autowired
@@ -148,6 +165,9 @@ class CbomServiceITest extends BaseSpringBootTest {
     void setUp() {
         originalSettings = SettingsCache.getSettings(SettingsSection.PLATFORM);
 
+        // crypto_asset_source_to_cbom_key is RESTRICT, so a CBOM with sources cannot be deleted until they are gone.
+        cryptoAssetSourceRepository.deleteAll();
+        cryptoAssetRepository.deleteAll();
         cbomRepository.deleteAll();
         scheduledJobHistoryRepository.deleteAll();
         scheduledJobsRepository.deleteAll();
@@ -1665,6 +1685,31 @@ class CbomServiceITest extends BaseSpringBootTest {
                                         """)));
     }
 
+    /**
+     * The backlog pass selects its work list with a plain read, so every node selects the same rows. The claim is what
+     * stops the second one from spending the same HTTP document read. It is a compare-and-swap on what the work list
+     * saw rather than a state allowlist, because an allowlist admitting IN_PROGRESS would let the loser through.
+     */
+    @Test
+    void theIngestWorkListIsClaimedOncePerRow() {
+        Cbom cbom = new Cbom();
+        cbom.setSerialNumber("urn:uuid:claimed-once");
+        cbom.setVersion(1);
+        cbom.setSpecVersion("1.6");
+        final Cbom saved = cbomRepository.save(cbom);
+
+        Assertions
+                .assertEquals(1, syncStateWriter
+                        .claimForIngest(saved.getUuid(), CbomAssetSyncState.PENDING, saved.getAssetSyncAttemptedAt()));
+        Assertions
+                .assertEquals(0, syncStateWriter
+                        .claimForIngest(saved.getUuid(), CbomAssetSyncState.PENDING, saved.getAssetSyncAttemptedAt()),
+                        "the second node reads the row as the work list left it and must not claim it");
+        Assertions
+                .assertEquals(CbomAssetSyncState.IN_PROGRESS,
+                        cbomRepository.findById(saved.getUuid()).orElseThrow().getAssetSyncState());
+    }
+
     @Test
     void testBulkDeleteCbom_deleteFailure_returnsErrorMessage() {
         Cbom cbom = new Cbom();
@@ -1682,5 +1727,186 @@ class CbomServiceITest extends BaseSpringBootTest {
         Assertions.assertEquals(1, messages.size());
         Assertions.assertEquals(savedUuid.toString(), messages.getFirst().getUuid());
         Assertions.assertNotNull(messages.getFirst().getMessage());
+    }
+
+    // ---------------------------------------------------------------- cryptographic-asset ingest
+
+    /**
+     * A document the feed offers is ingested in the same run that stores its header, from the document already read.
+     */
+    @Test
+    void theAssetsOfAStoredCbomAreIngestedAndTheRowReadsSynced() throws Exception {
+        BomEntryDto entry = entry("serial-ingest", "1", OffsetDateTime.now().minusHours(1));
+        mockSearchResponse(List.of(entry));
+        mockDocumentWithAssets(entry, TWO_ALGORITHM_COMPONENTS);
+
+        cbomInternalService.sync();
+
+        Cbom stored = cbomRepository.findAll().getFirst();
+        assertEquals(CbomAssetSyncState.SYNCED, stored.getAssetSyncState());
+        assertNull(stored.getAssetSyncError());
+        assertNotNull(stored.getAssetsSyncedAt());
+        assertNotNull(stored.getAssetSyncAttemptedAt());
+        assertEquals(2, cryptoAssetRepository.count());
+        assertEquals(2, cryptoAssetSourceRepository.count());
+    }
+
+    /**
+     * Resumability, and the reason the ingest needs a work list of its own: the feed skips every entry whose header row
+     * already exists, so a CBOM whose assets were never ingested -- a crashed run, or a document uploaded through
+     * Core's own API -- is invisible to it. Without the pending pass these assets would never be ingested at all.
+     */
+    @Test
+    void aCbomWhoseAssetsWereNeverIngestedIsPickedUpByALaterRun() throws Exception {
+        Cbom header = savePendingHeader("serial-pending");
+        assertEquals(CbomAssetSyncState.PENDING, header.getAssetSyncState());
+
+        mockSearchResponse(List.of());
+        mockDocumentWithAssets(entry("serial-pending", "1", OffsetDateTime.now()), TWO_ALGORITHM_COMPONENTS);
+
+        cbomInternalService.sync();
+
+        Cbom resumed = cbomRepository.findById(header.getUuid()).orElseThrow();
+        assertEquals(CbomAssetSyncState.SYNCED, resumed.getAssetSyncState());
+        assertEquals(2, cryptoAssetRepository.count());
+    }
+
+    /**
+     * Epic AC9: redoing a unit converges on the same rows. The state is reset the way a crashed run leaves it, so the
+     * second ingest walks the same document through the same upserts rather than being skipped as already synced.
+     */
+    @Test
+    void redoingAnIngestOfTheSameDocumentCreatesNoNewRows() throws Exception {
+        BomEntryDto entry = entry("serial-idempotent", "1", OffsetDateTime.now().minusHours(1));
+        mockSearchResponse(List.of(entry));
+        mockDocumentWithAssets(entry, TWO_ALGORITHM_COMPONENTS);
+        cbomInternalService.sync();
+        long assetsAfterFirstRun = cryptoAssetRepository.count();
+        long sourcesAfterFirstRun = cryptoAssetSourceRepository.count();
+
+        Cbom stored = cbomRepository.findAll().getFirst();
+        syncStateWriter.markFailed(stored.getUuid(), "interrupted");
+        // The retry list holds a failed row back until cbom.sync.ingest-retry-after has passed, so the attempt is
+        // aged deliberately: this test is about redoing the unit, not about when a run offers to.
+        Cbom failed = cbomRepository.findById(stored.getUuid()).orElseThrow();
+        failed.setAssetSyncAttemptedAt(OffsetDateTime.now().minusHours(2));
+        cbomRepository.save(failed);
+
+        cbomInternalService.sync();
+
+        assertEquals(assetsAfterFirstRun, cryptoAssetRepository.count());
+        assertEquals(sourcesAfterFirstRun, cryptoAssetSourceRepository.count());
+        assertEquals(CbomAssetSyncState.SYNCED,
+                cbomRepository.findById(stored.getUuid()).orElseThrow().getAssetSyncState());
+    }
+
+    /**
+     * A document the repository will not hand over must leave a mark on the row. An untouched row keeps the state and
+     * the attempt timestamp the work list selects on, so it would be offered again at the same position on every run,
+     * spending one of the run's budget slots for ever and telling the operator nothing.
+     */
+    @Test
+    void aPendingCbomWhoseDocumentCannotBeReadRecordsTheFailureRatherThanStayingPending() throws Exception {
+        Cbom header = savePendingHeader("serial-unreadable");
+
+        mockSearchResponse(List.of());
+        mockServer
+                .stubFor(WireMock
+                        .get(WireMock.urlPathEqualTo("/api/v1/bom/serial-unreadable"))
+                        .willReturn(WireMock.aResponse().withStatus(500)));
+
+        cbomInternalService.sync();
+
+        Cbom afterRun = cbomRepository.findById(header.getUuid()).orElseThrow();
+        assertEquals(CbomAssetSyncState.FAILED, afterRun.getAssetSyncState());
+        assertNotNull(afterRun.getAssetSyncError());
+        assertNotNull(afterRun.getAssetSyncAttemptedAt());
+        // Recorded, and therefore out of the pending list the next run reads.
+        assertTrue(cbomRepository.findPendingAssetIngests(CbomAssetSyncState.PENDING, Limit.of(10)).isEmpty());
+    }
+
+    /**
+     * A repository that answers nothing at all is not a verdict on the documents. Charging it to them would rewrite the
+     * whole pending backlog as FAILED -- at the run's budget an hour, each row carrying a sentence about the repository
+     * -- and the header pass's own guard cannot see this one: it returns at once when the feed deferred nothing, which
+     * is the ordinary state of the run that works a backlog down.
+     */
+    @Test
+    void anUnreachableRepositoryLeavesThePendingBacklogAloneRatherThanFailingEveryDocument() throws Exception {
+        Cbom first = savePendingHeader("serial-outage-1");
+        Cbom second = savePendingHeader("serial-outage-2");
+
+        mockSearchResponse(List.of());
+        mockServer
+                .stubFor(WireMock
+                        .get(WireMock.urlPathMatching("/api/v1/bom/serial-outage-.*"))
+                        .willReturn(WireMock.aResponse().withStatus(503)));
+
+        cbomInternalService.sync();
+
+        assertEquals(CbomAssetSyncState.PENDING,
+                cbomRepository.findById(first.getUuid()).orElseThrow().getAssetSyncState());
+        assertEquals(CbomAssetSyncState.PENDING,
+                cbomRepository.findById(second.getUuid()).orElseThrow().getAssetSyncState());
+        assertNull(cbomRepository.findById(first.getUuid()).orElseThrow().getAssetSyncError());
+    }
+
+    /** One unreadable document among no successes is still charged to it: one document must never hold the pass. */
+    @Test
+    void aSingleUnreadableDocumentIsChargedToItRatherThanReadAsAnOutage() throws Exception {
+        Cbom only = savePendingHeader("serial-lone-503");
+
+        mockSearchResponse(List.of());
+        mockServer
+                .stubFor(WireMock
+                        .get(WireMock.urlPathEqualTo("/api/v1/bom/serial-lone-503"))
+                        .willReturn(WireMock.aResponse().withStatus(503)));
+
+        cbomInternalService.sync();
+
+        Cbom afterRun = cbomRepository.findById(only.getUuid()).orElseThrow();
+        assertEquals(CbomAssetSyncState.FAILED, afterRun.getAssetSyncState());
+        assertNotNull(afterRun.getAssetSyncError());
+    }
+
+    /**
+     * The work list is selected, then a document is read over HTTP, and only then is a failure written -- so another
+     * node can finish the same CBOM inside that window. A failure written over it would flip a genuinely synced row to
+     * FAILED with an error that is not about it.
+     */
+    @Test
+    void aFailureDoesNotOverwriteACbomAnotherRunHasAlreadySynced() {
+        Cbom cbom = savePendingHeader("serial-raced");
+        syncStateWriter.markSynced(cbom.getUuid(), OffsetDateTime.now());
+
+        int written = syncStateWriter.markFailed(cbom.getUuid(), "a stale claim's verdict");
+
+        assertEquals(0, written);
+        Cbom afterRace = cbomRepository.findById(cbom.getUuid()).orElseThrow();
+        assertEquals(CbomAssetSyncState.SYNCED, afterRace.getAssetSyncState());
+        assertNull(afterRace.getAssetSyncError());
+    }
+
+    private Cbom savePendingHeader(String serialNumber) {
+        Cbom header = new Cbom();
+        header.setSerialNumber(serialNumber);
+        header.setVersion(1);
+        header.setSpecVersion("1.6");
+        return cbomRepository.save(header);
+    }
+
+    /** The stub a document read answers with, carrying components the extractor can turn into assets. */
+    private void mockDocumentWithAssets(BomEntryDto entry, String componentsJson) {
+        String body = "{\"specVersion\":\"1.6\",\"metadata\":{\"component\":{\"name\":\"ingest-test\"}},"
+                + "\"components\":" + componentsJson + "}";
+        mockServer
+                .stubFor(WireMock
+                        .get(WireMock.urlPathEqualTo("/api/v1/bom/" + entry.getSerialNumber()))
+                        .withQueryParam("version", WireMock.equalTo(entry.getVersion()))
+                        .willReturn(WireMock
+                                .aResponse()
+                                .withStatus(200)
+                                .withHeader("Content-Type", CONTENT_TYPE)
+                                .withBody(body)));
     }
 }

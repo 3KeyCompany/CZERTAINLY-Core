@@ -21,7 +21,8 @@ public class ClusterOperationSynchronizer {
         SIGNING_RECORD_OUTBOX_DRAIN(0x51_67_4E_43_4F_42_44_52L),
         PROVIDER_STATUS_POLL_SWEEP(0x50_52_4F_56_50_4F_4C_4CL),
         DISCOVERY_WORK_SWEEP(0x44_49_53_43_57_4B_53_50L),
-        CRYPTO_ASSET_PQC_SWEEP(0x43_41_50_51_43_53_57_50L);
+        CRYPTO_ASSET_PQC_SWEEP(0x43_41_50_51_43_53_57_50L),
+        CBOM_ASSET_SYNC(0x43_42_4F_4D_41_53_59_4EL);
 
         private final long lockKey;
 

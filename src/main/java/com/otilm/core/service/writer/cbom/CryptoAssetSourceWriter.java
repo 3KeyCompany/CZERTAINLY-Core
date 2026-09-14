@@ -76,13 +76,26 @@ public class CryptoAssetSourceWriter {
     @Transactional
     public void upsertSource(UUID assetUuid, UUID cbomUuid, Map<String, Object> cryptoProperties,
             List<Map<String, Object>> occurrences, OffsetDateTime seenAt) {
+        upsertSource(assetUuid, cbomUuid, cryptoProperties, occurrences, occurrenceCount(occurrences), seenAt);
+    }
+
+    /**
+     * Records what one CBOM says about one asset when the caller already knows how many occurrences the document
+     * reported, which is the shape extraction hands over: {@code CbomAssetExtractor} caps the evidence as it builds an
+     * asset, so the list reaching this method is already clipped and its size is no longer what the producer claimed.
+     * Deriving the count from it would erase exactly the gap {@code occurrence_count} exists to record.
+     *
+     * @param reportedOccurrences how many occurrences the CBOM reported, before any capping
+     */
+    @Transactional
+    public void upsertSource(UUID assetUuid, UUID cbomUuid, Map<String, Object> cryptoProperties,
+            List<Map<String, Object>> occurrences, int reportedOccurrences, OffsetDateTime seenAt) {
         assetRepository.lockForSourceChange(assetUuid);
         CryptoPropertiesDigest digest = CryptoPropertiesDigest.of(cryptoProperties);
         sourceRepository
                 .upsertSource(UUID.randomUUID(), assetUuid, cbomUuid, JsonColumnText.render(cryptoProperties),
                         digest.leafCount(), digest.hash(),
-                        JsonColumnText.render(OccurrenceEvidenceCapper.cap(occurrences)), occurrenceCount(occurrences),
-                        seenAt);
+                        JsonColumnText.render(OccurrenceEvidenceCapper.cap(occurrences)), reportedOccurrences, seenAt);
         assetRepository.recomputeMergeFromSources(assetUuid);
     }
 
