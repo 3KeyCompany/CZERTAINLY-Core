@@ -24,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * The suite's schema is generated from the entities, so the {@code USING} clause that splits a stored composite runs
  * nowhere else: a conversion that dropped the members, kept the {@code +} inside one element, or turned an absent curve
- * into a one-element array would pass unnoticed. The table is expected to be empty at deployment time -- ingest lands
- * in core#2073 -- but the migration is written to convert data, so the data path is what is asserted.
+ * into a one-element array, or turned an empty string into an empty array, would pass unnoticed. The table is expected
+ * to be empty at deployment time -- ingest lands in core#2073 -- but the migration is written to convert data, so the
+ * data path is what is asserted.
  */
 class CryptoAssetCurveMembershipMigrationITest extends BaseSpringBootTest {
 
@@ -63,6 +64,10 @@ class CryptoAssetCurveMembershipMigrationITest extends BaseSpringBootTest {
                         .isEqualTo("{other/curve25519,other/curve448}");
                 assertThat(storedCurve(connection, "absent"))
                         .describedAs("an absent curve stays SQL NULL rather than becoming an empty array")
+                        .isNull();
+                assertThat(storedCurve(connection, "blank"))
+                        .describedAs("an empty-string curve converts to absent too: string_to_array('', '+') is {},"
+                                + " which reads back as null through the DTO and as '' through the PQC sweep")
                         .isNull();
                 assertThat(columnType(connection)).isEqualTo("ARRAY");
                 assertThat(curveIndexDefinition(connection))
@@ -160,6 +165,8 @@ class CryptoAssetCurveMembershipMigrationITest extends BaseSpringBootTest {
         insertAsset(connection, "single", "'secp256r1'");
         insertAsset(connection, "hybrid", "'other/curve25519+other/curve448'");
         insertAsset(connection, "absent", "NULL");
+        // Not a shape this codebase writes, but the migration converts data it did not write.
+        insertAsset(connection, "blank", "''");
     }
 
     private void insertAsset(Connection connection, String identityKey, String curveLiteral) throws SQLException {

@@ -3,6 +3,7 @@ package com.otilm.core.service.writer.cbom;
 import com.otilm.api.exception.ValidationError;
 import com.otilm.api.exception.ValidationException;
 import com.otilm.api.model.core.cryptoasset.PqcVerdict;
+import com.otilm.core.cbom.asset.CompositeCurve;
 import com.otilm.core.cbom.asset.CryptoAssetIdentityFields;
 import com.otilm.core.cbom.asset.JsonColumnText;
 import com.otilm.core.cbom.asset.identity.IdentityRuleset;
@@ -11,6 +12,7 @@ import com.otilm.core.dao.CryptoAssetConstraintTranslator;
 import com.otilm.core.dao.repository.cbom.CryptoAssetAliasRepository;
 import com.otilm.core.dao.repository.cbom.CryptoAssetRepository;
 import com.otilm.core.model.cbom.CryptoAssetIdentityGuard;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -87,7 +89,7 @@ public class CryptoAssetWriter {
         assetRepository
                 .upsertIdentity(UUID.randomUUID(), identityKey, IdentityRuleset.VERSION,
                         stored.assetType() == null ? null : stored.assetType().name(), stored.name(), stored.oid(),
-                        stored.algorithmFamily(), stored.primitive(), stored.parameterSet(), stored.curve(),
+                        stored.algorithmFamily(), stored.primitive(), stored.parameterSet(), curveMembers(stored),
                         stored.mode(), stored.padding(), stored.variant(), guard == null ? null : guard.name());
         return assetRepository
                 .findUuidByIdentityKey(identityKey)
@@ -153,6 +155,12 @@ public class CryptoAssetWriter {
      * stricter than its constraint rejects valid rows, while one looser than its constraint leaves the channel open for
      * exactly the inputs it was added to stop.
      */
+    /** The column holds the members; the caller carries the joined spelling, which is what the preimage hashes. */
+    private static String[] curveMembers(CryptoAssetIdentityFields stored) {
+        List<String> members = CompositeCurve.split(stored.curve());
+        return members == null ? null : members.toArray(new String[0]);
+    }
+
     private static void requireWithinLengthBounds(CryptoAssetIdentityFields stored) {
         rejectIfLonger(stored.oid(), MAX_OID_LENGTH, "ck_crypto_asset_oid_length");
         rejectIfLonger(stored.name(), MAX_NAME_LENGTH, "ck_crypto_asset_name_length");

@@ -64,9 +64,10 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
      * reconciling a genuine disagreement is an explicit decision rather than a side effect of sync order.
      *
      * <p>
-     * <b>Curve:</b> bound as the normalized composite and stored split on {@code +}, so a hybrid scheme's members can
-     * each be matched on their own. The caller keeps passing the joined spelling because that is what the identity
-     * preimage hashes; the split is a storage projection, and {@code CompositeCurve} is its inverse on the read side.
+     * <b>Curve:</b> bound as the members, so a hybrid scheme's members can each be matched on their own. The split is a
+     * storage projection of the {@code +}-joined spelling the identity preimage hashes, and it is taken in Java rather
+     * than in this statement -- {@code CompositeCurve} holds both directions of it, so the separator has one definition
+     * and a caller that has to see individual members (folding a curve onto a class representative, core#2166) can.
      *
      * <p>
      * <b>Identity guard:</b> an existing guard survives, because it is a safety refusal rather than a field. A guard
@@ -86,7 +87,7 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
                     algorithm_family, primitive, parameter_set, curve, mode, padding, variant, identity_guard,
                     properties_leaf_count, source_count, i_cre, i_upd)
             VALUES (:uuid, :key, :rulesetVersion, :assetType, :name, :oid, :algorithmFamily, :primitive,
-                    :parameterSet, string_to_array(CAST(:curve AS TEXT), '+'), :mode, :padding, :variant, :identityGuard,
+                    :parameterSet, :curve, :mode, :padding, :variant, :identityGuard,
                     0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (identity_key) DO UPDATE SET
                 ruleset_version = EXCLUDED.ruleset_version,
@@ -102,12 +103,11 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
                 variant = COALESCE(crypto_asset.variant, EXCLUDED.variant),
                 identity_guard = COALESCE(crypto_asset.identity_guard, EXCLUDED.identity_guard),
                 i_upd = CURRENT_TIMESTAMP
-            """,
-            nativeQuery = true)
+            """, nativeQuery = true)
     void upsertIdentity(@Param("uuid") UUID uuid, @Param("key") String key, @Param("rulesetVersion") int rulesetVersion,
             @Param("assetType") String assetType, @Param("name") String name, @Param("oid") String oid,
             @Param("algorithmFamily") String algorithmFamily, @Param("primitive") String primitive,
-            @Param("parameterSet") String parameterSet, @Param("curve") String curve, @Param("mode") String mode,
+            @Param("parameterSet") String parameterSet, @Param("curve") String[] curve, @Param("mode") String mode,
             @Param("padding") String padding, @Param("variant") String variant,
             @Param("identityGuard") String identityGuard);
 
@@ -308,6 +308,16 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
      * for eight columns on every filter-panel open. The CTE instead hops index-min to index-min over the per-column
      * btrees the migration already ships -- O(distinct values x log rows), reliably milliseconds. {@code min()} ignores
      * NULLs, and the strictly-greater walk makes the values distinct and sorted by construction.
+     *
+     * <p>
+     * That budget no longer holds for the panel as a whole. {@code getSearchableFieldInformationByGroup} calls all
+     * eight of these in one request, and {@link #findDistinctCurve()} is a full unnest scan -- the array's elements are
+     * the distinct values and no index orders them. So the seven skip scans still avoid seven scans, but the request's
+     * latency is the curve scan, and the property this loose index scan was written to buy the endpoint is not one the
+     * endpoint has while curve is in it. Restoring it and making the curve list proportional to the number of distinct
+     * curves are the same work: an expression index a skip scan can walk, a side table of members, or a cached value
+     * list. Recorded as open work on core#2166, which touches the same list; unmeasurable until ingest (core#2073) puts
+     * rows in the table.
      */
     @Query(value = """
             WITH RECURSIVE vals AS (
@@ -348,7 +358,9 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
      * <p>
      * The sibling finders skip along a btree with a recursive loose index scan. That cannot work here: the distinct
      * values are the array's elements, and no index orders them. The unnest is a sequential scan, which is what the
-     * value list for a membership filter costs.
+     * value list for a membership filter costs -- and, because the filter panel asks for all eight lists in one
+     * request, what that whole request now costs. See {@link #findDistinctAlgorithmFamily()} for the budget this spends
+     * and what would restore it.
      */
     @Query(value = """
             SELECT DISTINCT member FROM {h-schema}crypto_asset a, unnest(a.curve) AS member

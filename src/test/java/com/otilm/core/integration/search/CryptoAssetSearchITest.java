@@ -32,6 +32,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 
@@ -210,8 +212,23 @@ class CryptoAssetSearchITest extends BaseSpringBootTest {
                 .containsExactlyInAnyOrder(populated, hybrid);
         assertThat(search(
                 aPropertyFilter(FilterField.CBOM_ASSET_CURVE, FilterConditionOperator.NOT_EQUALS, "other/curve25519")))
-                .describedAs("excluding a member excludes every asset that touches it")
-                .doesNotContain(hybrid);
+                .describedAs("excluding a member excludes every asset that touches it, and keeps the rest --"
+                        + " including the absent curve, which the predicate's IS NULL arm is what keeps")
+                .containsExactlyInAnyOrder(populated, bare);
+    }
+
+    /**
+     * The array column answers no comparison, pattern or regex operator, and the field advertises none of them.
+     * Reaching the column, each failed inside the query as a {@code DataAccessException} no handler translates -- a
+     * 500, not a 422. All six are refused before the query is built.
+     */
+    @ParameterizedTest
+    @EnumSource(value = FilterConditionOperator.class,
+            names = {"STARTS_WITH", "ENDS_WITH", "MATCHES", "NOT_MATCHES", "GREATER", "LESSER"})
+    void anOperatorTheCurveFieldDoesNotAdvertiseIsRefusedRatherThanReachingTheColumn(FilterConditionOperator operator) {
+        assertThatThrownBy(() -> search(aPropertyFilter(FilterField.CBOM_ASSET_CURVE, operator, "secp256r1")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("does not support");
     }
 
     // ---- free text, refuted-OID and source-CBOM filters ----

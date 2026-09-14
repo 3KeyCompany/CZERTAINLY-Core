@@ -2,6 +2,9 @@ package com.otilm.core.cbom.asset;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -36,13 +39,45 @@ class CompositeCurveTest {
     }
 
     /**
-     * An empty array cannot reach the column -- the normalizer yields null rather than an empty token, and
-     * {@code string_to_array} maps SQL NULL to NULL -- so this pins the guard rather than a reachable state. Without it
-     * the method would answer the empty string, which is a curve nothing has and every {@code EMPTY} filter would
-     * disagree about.
+     * An empty array cannot reach the column -- the normalizer yields null rather than an empty token, and the split
+     * maps a blank composite to null -- so this pins the guard rather than a reachable state. Without it the method
+     * would answer the empty string, which is a curve nothing has and every {@code EMPTY} filter would disagree about.
      */
     @Test
     void anEmptyMemberListIsAbsentTooRatherThanTheEmptyString() {
         assertThat(CompositeCurve.join(List.of())).isNull();
+    }
+
+    @Test
+    void aSingleCurveSplitsToItsOwnSoleMember() {
+        assertThat(CompositeCurve.split("secp256r1")).containsExactly("secp256r1");
+    }
+
+    @Test
+    void aCompositeSplitsIntoItsMembersInTheOrderItSpelledThem() {
+        assertThat(CompositeCurve.split("other/curve25519+other/curve448"))
+                .containsExactly("other/curve25519", "other/curve448");
+    }
+
+    /**
+     * The invariant every other caller rests on: the storage projection is lossless, so the preimage spelling survives
+     * a round trip through the column and the API reports back what the normalizer produced.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"secp256r1", "other/curve25519+other/curve448", "brainpoolP256r1+secp256r1+secp384r1"})
+    void joiningWhatWasSplitReproducesTheSpelling(String composite) {
+        assertThat(CompositeCurve.join(CompositeCurve.split(composite))).isEqualTo(composite);
+    }
+
+    /**
+     * A blank composite is absent, not a one-element array holding the empty string. That array would report
+     * {@code null} back through {@link CompositeCurve#join} and {@code ""} to anything reading the column joined, so
+     * one row would answer two different things about the same curve.
+     */
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", "   "})
+    void anAbsentOrBlankCompositeSplitsToNothingRatherThanToAnEmptyMember(String composite) {
+        assertThat(CompositeCurve.split(composite)).isNull();
     }
 }
