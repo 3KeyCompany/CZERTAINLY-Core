@@ -44,15 +44,7 @@ public final class AcmeCsrIdentifiers {
         List<byte[]> addresses = new ArrayList<>();
         commonNameOf(csr).ifPresent(dnsNames::add);
         for (Attribute attribute : csr.getAttributes()) {
-            if (!attribute.getAttrType().equals(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)) {
-                continue;
-            }
-            Extensions extensions = Extensions.getInstance(attribute.getAttrValues().getObjectAt(0));
-            GeneralNames names = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
-            if (names == null) {
-                continue;
-            }
-            for (GeneralName name : names.getNames()) {
+            for (GeneralName name : subjectAlternativeNames(attribute)) {
                 if (name.getTagNo() == GeneralName.dNSName) {
                     dnsNames.add(IETFUtils.valueToString(name.getName()));
                 } else if (name.getTagNo() == GeneralName.iPAddress) {
@@ -61,6 +53,16 @@ public final class AcmeCsrIdentifiers {
             }
         }
         return new AcmeCsrIdentifiers(dnsNames, addresses);
+    }
+
+    /** The subjectAltName entries an attribute carries, and none for an attribute that is about something else. */
+    private static GeneralName[] subjectAlternativeNames(Attribute attribute) {
+        if (!attribute.getAttrType().equals(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)) {
+            return new GeneralName[0];
+        }
+        Extensions extensions = Extensions.getInstance(attribute.getAttrValues().getObjectAt(0));
+        GeneralNames names = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
+        return names == null ? new GeneralName[0] : names.getNames();
     }
 
     /**
