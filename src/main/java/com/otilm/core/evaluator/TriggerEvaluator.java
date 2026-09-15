@@ -275,7 +275,7 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         // whether the condition is satisfied
         try {
             if (!(objectValue instanceof Collection<?> objectValues)) {
-                BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, fieldIdentifier);
+                BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, filterField.getLabel());
                 if (objectValue == null) {
                     return evaluateAbsentValue(operator);
                 }
@@ -294,7 +294,14 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         } catch (RuleException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuleException("Condition is not set properly: " + e.getMessage());
+            // The operator itself failed on the condition's value: a date that does not parse, a number that is not
+            // one. The operator can act on the value named here; the Java detail belongs in the log, not the reason.
+            logger
+                    .debug("Condition on field {} with operator {} failed on value '{}'", fieldIdentifier, operator,
+                            conditionValue, e);
+            throw new RuleException(
+                    "Condition on field '%s' is not set properly: value '%s' cannot be used with operator '%s'"
+                            .formatted(filterField.getLabel(), conditionValue, operator.getLabel()));
         }
     }
 
@@ -305,7 +312,7 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         // For EQUALS, if no true evaluation during loop, result stays false, for NOT_EQUALS, if there is no false
         // evaluation during loop, result stays true
         boolean result = (operator == FilterConditionOperator.NOT_EQUALS);
-        BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, filterField.name());
+        BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, filterField.getLabel());
         for (Object item : objectValues) {
             if (nestedJoinAttributes != null) {
                 item = getPropertyValue(item, nestedJoinAttributes, filterField.getFieldAttribute());
@@ -326,11 +333,11 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
     }
 
     private static BiPredicate<Object, Object> comparisonFor(FilterFieldType fieldType,
-            FilterConditionOperator operator, String fieldIdentifier) throws RuleException {
+            FilterConditionOperator operator, String fieldLabel) throws RuleException {
         BiPredicate<Object, Object> comparison = fieldTypeToOperatorActionMap.get(fieldType).get(operator);
         if (comparison == null) {
-            throw new RuleException("Condition is not set properly: operator '%s' cannot be applied to field %s"
-                    .formatted(operator.getLabel(), fieldIdentifier));
+            throw new RuleException("Condition on field '%s' is not set properly: operator '%s' cannot be applied to it"
+                    .formatted(fieldLabel, operator.getLabel()));
         }
         return comparison;
     }

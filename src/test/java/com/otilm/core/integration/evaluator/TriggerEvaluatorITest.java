@@ -438,6 +438,17 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
         condition.setOperator(FilterConditionOperator.GREATER);
         Assertions.assertTrue(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
 
+        // A value the operator cannot use is reported in the operator's terms, without the Java error text
+        condition.setValue("not-a-date");
+        RuleException reason = Assertions
+                .assertThrows(RuleException.class,
+                        () -> commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+        Assertions.assertTrue(reason.getMessage().contains("Resolved At"), reason.getMessage());
+        Assertions.assertTrue(reason.getMessage().contains("not-a-date"), reason.getMessage());
+        Assertions.assertFalse(reason.getMessage().contains("java."), reason.getMessage());
+        Assertions.assertFalse(reason.getMessage().contains("Cannot invoke"), reason.getMessage());
+        condition.setValue("2019-12-01T22:10:00.274+00:00");
+
         // The same holds for any other field type without a value
         certificate.setSerialNumber(null);
         condition.setFieldIdentifier(FilterField.SERIAL_NUMBER.name());
