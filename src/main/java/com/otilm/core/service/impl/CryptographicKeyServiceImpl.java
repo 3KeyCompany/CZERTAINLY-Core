@@ -5,6 +5,7 @@ import com.otilm.api.exception.AttributeException;
 import com.otilm.api.exception.ConnectorException;
 import com.otilm.api.exception.NotFoundException;
 import com.otilm.api.exception.NotSupportedException;
+import com.otilm.api.exception.PlatformException;
 import com.otilm.api.exception.ValidationError;
 import com.otilm.api.exception.ValidationException;
 import com.otilm.api.model.client.attribute.RequestAttribute;
@@ -1562,7 +1563,7 @@ public class CryptographicKeyServiceImpl implements CryptographicKeyExternalServ
         }
     }
 
-    private static final class KeyItemDestructionException extends RuntimeException {
+    private static final class KeyItemDestructionException extends RuntimeException implements PlatformException {
 
         private KeyItemDestructionException(String message, Exception cause) {
             super(message, cause);
