@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -82,6 +83,7 @@ public class CbomAssetIngestService {
     private final CbomAssetExtractor extractor;
     private final CryptoAssetWriter assetWriter;
     private final CryptoAssetSourceWriter sourceWriter;
+    private final CbomAssetDetachService detachService;
     private final CbomAssetSyncStateWriter stateWriter;
     private final CbomRepository cbomRepository;
     private final CryptoAssetRepository assetRepository;
@@ -93,13 +95,14 @@ public class CbomAssetIngestService {
     private final int batchSize;
 
     public CbomAssetIngestService(CbomAssetExtractor extractor, CryptoAssetWriter assetWriter,
-            CryptoAssetSourceWriter sourceWriter, CbomAssetSyncStateWriter stateWriter, CbomRepository cbomRepository,
-            CryptoAssetRepository assetRepository, PqcEvaluator evaluator,
-            ClusterOperationSynchronizer clusterSynchronizer, TransactionHandler transactionHandler,
-            MeterRegistry meterRegistry, CbomSyncProperties properties) {
+            CryptoAssetSourceWriter sourceWriter, CbomAssetDetachService detachService,
+            CbomAssetSyncStateWriter stateWriter, CbomRepository cbomRepository, CryptoAssetRepository assetRepository,
+            PqcEvaluator evaluator, ClusterOperationSynchronizer clusterSynchronizer,
+            TransactionHandler transactionHandler, MeterRegistry meterRegistry, CbomSyncProperties properties) {
         this.extractor = extractor;
         this.assetWriter = assetWriter;
         this.sourceWriter = sourceWriter;
+        this.detachService = detachService;
         this.stateWriter = stateWriter;
         this.cbomRepository = cbomRepository;
         this.assetRepository = assetRepository;
@@ -139,7 +142,13 @@ public class CbomAssetIngestService {
          * {@code cbom.sync.asset-ingest-enabled} is off. Nothing was read and nothing was written, and the CBOM is left
          * exactly as it was found -- so turning the switch back on resumes rather than repairs.
          */
-        DISABLED
+        DISABLED,
+        /**
+         * A later version of the same serial number is already stored, so this document no longer speaks for its URN.
+         * Nothing was written and the CBOM reads {@code SYNCED}: it owes no ingest, because the version that supersedes
+         * it owns the inventory.
+         */
+        SUPERSEDED
     }
 
     /**
@@ -165,7 +174,14 @@ public class CbomAssetIngestService {
         if (!enabled) {
             return IngestOutcome.DISABLED;
         }
-        // Captured before the claim overwrites it, so a batch that finds the lock taken can put the row back in the
+        if (cbomRepository.hasLaterVersion(cbomUuid)) {
+            // Checked before the document is even parsed: a superseded revision has nothing to contribute, and
+            // ingesting it would attach the inventory to a document another row already speaks for. Ahead of the
+            // claim as well, so a revision nothing will parse never takes one.
+            runInOwnTransaction(() -> stateWriter.markSynced(cbomUuid, seenAt));
+            return IngestOutcome.SUPERSEDED;
+        }
+        // Captured before the claim overwrites it, so a unit that finds the lock taken can put the row back in the
         // list it came from rather than leaving it IN_PROGRESS for work no node is doing.
         final CbomAssetSyncState entryState = cbomRepository.findAssetSyncState(cbomUuid).orElse(null);
         runInOwnTransaction(() -> stateWriter.markInProgress(cbomUuid));
@@ -196,6 +212,9 @@ public class CbomAssetIngestService {
                     return lockedElsewhere(cbomUuid, entryState);
                 }
             }
+            if (!withdrawSupersededVersions(cbomUuid)) {
+                return lockedElsewhere(cbomUuid, entryState);
+            }
         } catch (RuntimeException e) {
             log.warn("CBOM asset ingest: storing the assets failed for CBOM {}", cbomUuid, e);
             return fail(cbomUuid, "storing the cryptographic assets failed: " + safeReason(e));
@@ -206,6 +225,34 @@ public class CbomAssetIngestService {
                 .debug("CBOM asset ingest: CBOM {} ingested {} assets, {} components skipped", cbomUuid, assets.size(),
                         extraction.skips().size());
         return IngestOutcome.INGESTED;
+    }
+
+    /**
+     * Hands the URN to this version: every earlier version's links are withdrawn, and the assets they leave without a
+     * source are settled by {@link CbomAssetDetachService}'s orphan rule.
+     *
+     * <p>
+     * After the new version's own sources are written, not before. A run that dies in between leaves an asset sourced
+     * by two revisions of one document -- a count too high, which the next run corrects -- where the other order would
+     * leave the inventory saying nothing about a document that still exists.
+     *
+     * @return false when another node holds the cluster lock, which leaves the CBOM owing the whole unit: it is not
+     * marked synced, and the next run redoes it idempotently
+     */
+    private boolean withdrawSupersededVersions(UUID cbomUuid) {
+        for (UUID superseded : cbomRepository.findSupersededVersionUuids(cbomUuid)) {
+            final Optional<CbomAssetDetachService.Withdrawal> withdrawn = detachService.withdraw(superseded);
+            if (withdrawn.isEmpty()) {
+                return false;
+            }
+            if (withdrawn.get().detached() > 0) {
+                log
+                        .debug("CBOM asset ingest: CBOM {} superseded version {}, withdrawing {} links ({} assets deleted, {} kept for an alias)",
+                                cbomUuid, superseded, withdrawn.get().detached(), withdrawn.get().deleted(),
+                                withdrawn.get().kept());
+            }
+        }
+        return true;
     }
 
     /**

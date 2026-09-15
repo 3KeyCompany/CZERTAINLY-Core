@@ -38,6 +38,37 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
     List<UUID> findUuidsKeyedBefore(@Param("version") int version);
 
     /**
+     * Whether no CBOM sources this asset any more -- the orphan test, taken after a detachment has recomputed the
+     * count.
+     *
+     * <p>
+     * Native and scalar so it reads the row the detachment just wrote rather than an entity the persistence context
+     * cached before it: {@code recomputeMergeFromSources} is a {@code @Modifying} native statement, which leaves any
+     * managed copy of the row stale.
+     */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM {h-schema}crypto_asset a WHERE a.uuid = :uuid AND a.source_count = 0)",
+            nativeQuery = true)
+    boolean isOrphaned(@Param("uuid") UUID uuid);
+
+    /**
+     * Whether an operator decision names this asset's key, on either side of a merge. An orphan carrying one is kept
+     * rather than collected: {@code crypto_asset_alias} cascades from the asset, so the collection would take the
+     * decision with it.
+     *
+     * <p>
+     * The join is done here rather than by handing the key to a caller: the key is a hash over a low-entropy preimage,
+     * and the fewer sources that name it the narrower the disclosure surface stays.
+     */
+    @Query(value = """
+            SELECT EXISTS (
+                SELECT 1 FROM {h-schema}crypto_asset a
+                JOIN {h-schema}crypto_asset_alias al
+                  ON al.absorbed_key = a.identity_key OR al.canonical_key = a.identity_key
+                WHERE a.uuid = :uuid)
+            """, nativeQuery = true)
+    boolean isNamedByAnAlias(@Param("uuid") UUID uuid);
+
+    /**
      * Inserts the asset for an identity key, or refreshes the identity columns of the row already keyed under it.
      *
      * <p>

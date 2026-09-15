@@ -68,6 +68,7 @@ class CbomAssetIngestServiceTest {
     private final CbomRepository cbomRepository = mock(CbomRepository.class);
     private final CryptoAssetRepository assetRepository = mock(CryptoAssetRepository.class);
     private final ClusterOperationSynchronizer synchronizer = mock(ClusterOperationSynchronizer.class);
+    private final CbomAssetDetachService detachService = mock(CbomAssetDetachService.class);
 
     @Test
     void everyAssetIsStoredWithItsSourceAndTheCbomReadsSynced() {
@@ -249,6 +250,51 @@ class CbomAssetIngestServiceTest {
     }
 
     /**
+     * Supersede is what makes the inventory say what the newest version of each URN says. Every version keeps its own
+     * {@code cbom} row, so the earlier one has to be withdrawn explicitly -- and after the new version's sources are
+     * written, so that a run dying in between overstates a count rather than losing the asset.
+     */
+    @Test
+    void theEarlierVersionsOfTheUrnAreWithdrawnAfterTheNewOneIsWritten() {
+        when(synchronizer.tryLock(anyString())).thenReturn(true);
+        whenUpsertReturnsAFreshUuid();
+        UUID earlier = UUID.randomUUID();
+        when(cbomRepository.findSupersededVersionUuids(CBOM)).thenReturn(List.of(earlier));
+        when(detachService.withdraw(earlier)).thenReturn(Optional.of(new CbomAssetDetachService.Withdrawal(2, 1, 0)));
+
+        CbomAssetIngestService.IngestOutcome outcome = ingest(twoAlgorithms(), 100);
+
+        assertThat(outcome).isEqualTo(CbomAssetIngestService.IngestOutcome.INGESTED);
+        InOrder order = inOrder(sourceWriter, detachService, stateWriter);
+        order.verify(sourceWriter, atLeastOnce()).upsertSource(any(), eq(CBOM), any(), any(), anyInt(), any());
+        order.verify(detachService).withdraw(earlier);
+        order.verify(stateWriter).markSynced(CBOM, SEEN_AT);
+    }
+
+    /**
+     * A withdrawal another node took the lock for leaves the whole unit owed: the CBOM is not marked synced, so the
+     * next run redoes it -- upserts included, which are idempotent -- rather than leaving one asset sourced by two
+     * revisions of the same document.
+     */
+    @Test
+    void aContendedWithdrawalLeavesTheCbomOwingTheWholeUnit() {
+        when(cbomRepository.findAssetSyncState(CBOM)).thenReturn(Optional.of(CbomAssetSyncState.PENDING));
+        when(synchronizer.tryLock(anyString())).thenReturn(true);
+        whenUpsertReturnsAFreshUuid();
+        UUID earlier = UUID.randomUUID();
+        when(cbomRepository.findSupersededVersionUuids(CBOM)).thenReturn(List.of(earlier));
+        when(detachService.withdraw(earlier)).thenReturn(Optional.empty());
+
+        CbomAssetIngestService.IngestOutcome outcome = ingest(twoAlgorithms(), 100);
+
+        assertThat(outcome).isEqualTo(CbomAssetIngestService.IngestOutcome.LOCKED_ELSEWHERE);
+        verify(stateWriter, never()).markSynced(any(), any());
+        verify(stateWriter, never()).markFailed(any(), anyString());
+        // The claim goes back, as it does when a batch finds the lock taken: the whole unit is owed again.
+        verify(stateWriter).releaseClaim(CBOM, CbomAssetSyncState.PENDING);
+    }
+
+    /**
      * Two components reporting the same algorithm are one source row, and the arbiter's {@code DO UPDATE} assigns
      * rather than accumulates on a {@code last_seen_at} tie -- which every component of one document is. Written one at
      * a time the last component would replace the first's payload and count; folded here they add up.
@@ -277,7 +323,7 @@ class CbomAssetIngestServiceTest {
     @Test
     void ingestWritesNothingWhenTheKillSwitchIsOff() {
         CbomAssetIngestService.IngestOutcome outcome = new CbomAssetIngestService(realExtractor(), assetWriter,
-                sourceWriter, stateWriter, cbomRepository, assetRepository,
+                sourceWriter, detachService, stateWriter, cbomRepository, assetRepository,
                 new PqcEvaluator(new AssetNormalizer(IdentityTables.load())), synchronizer, new TransactionHandler(),
                 new SimpleMeterRegistry(), ingestDisabled()).ingest(CBOM, twoAlgorithms(), SEEN_AT);
 
@@ -287,6 +333,24 @@ class CbomAssetIngestServiceTest {
         verify(synchronizer, never()).tryLock(anyString());
     }
 
+    /**
+     * A revision a later one already supersedes is refused the document entirely -- before parsing it, since nothing it
+     * says can reach the inventory -- and owes no further ingest.
+     */
+    @Test
+    void aSupersededVersionIsNotEvenParsed() {
+        when(cbomRepository.hasLaterVersion(CBOM)).thenReturn(true);
+        CbomAssetExtractor extractor = mock(CbomAssetExtractor.class);
+
+        CbomAssetIngestService.IngestOutcome outcome = service(extractor, 100).ingest(CBOM, twoAlgorithms(), SEEN_AT);
+
+        assertThat(outcome).isEqualTo(CbomAssetIngestService.IngestOutcome.SUPERSEDED);
+        verify(extractor, never()).extract(any(JsonNode.class));
+        verify(assetWriter, never()).upsertIdentity(anyString(), any(), any());
+        verify(stateWriter, never()).markInProgress(any());
+        verify(stateWriter).markSynced(CBOM, SEEN_AT);
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private CbomAssetIngestService.IngestOutcome ingest(JsonNode document, int batchSize) {
@@ -294,9 +358,9 @@ class CbomAssetIngestServiceTest {
     }
 
     private CbomAssetIngestService service(CbomAssetExtractor extractor, int batchSize) {
-        return new CbomAssetIngestService(extractor, assetWriter, sourceWriter, stateWriter, cbomRepository,
-                assetRepository, new PqcEvaluator(new AssetNormalizer(IdentityTables.load())), synchronizer,
-                new TransactionHandler(), new SimpleMeterRegistry(), properties(batchSize));
+        return new CbomAssetIngestService(extractor, assetWriter, sourceWriter, detachService, stateWriter,
+                cbomRepository, assetRepository, new PqcEvaluator(new AssetNormalizer(IdentityTables.load())),
+                synchronizer, new TransactionHandler(), new SimpleMeterRegistry(), properties(batchSize));
     }
 
     private void doThrowFromVerdictStamp() {

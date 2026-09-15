@@ -1271,6 +1271,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
             case REFUSED -> run.ingestRefused++;
             case FAILED -> run.ingestFailed++;
             case LOCKED_ELSEWHERE -> run.ingestLockedElsewhere++;
+            case SUPERSEDED -> run.ingestSuperseded++;
             // Nothing happened and nothing was left owing, so there is nothing for the run report to say. Both passes
             // return before reaching the ingest when the switch is off; this arm is what keeps a future caller that
             // does not from being counted as a failure.
@@ -1302,6 +1303,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         int ingestRefused;
         int ingestFailed;
         int ingestLockedElsewhere;
+        int ingestSuperseded;
         int ingestUnavailable;
         /**
          * Document reads of the ingest pass that the repository answered, which is what tells an outage from a
@@ -1321,8 +1323,9 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                     + "%d offers of permanently skipped entries failed again")
                     .formatted(read, pages, stored, duplicates, originals, invalid, recordedForRetry, retried, resolved,
                             permanentlySkipped, alreadyPermanent)
-                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d documents could not be re-read"
-                            .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestUnavailable);
+                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d were superseded by a later version, %d documents could not be re-read"
+                            .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestSuperseded,
+                                    ingestUnavailable);
         }
     }
 }

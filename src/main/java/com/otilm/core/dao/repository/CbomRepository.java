@@ -29,6 +29,35 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
 
     boolean existsBySerialNumberAndVersion(String serialNumber, int version);
 
+    /**
+     * The earlier versions of the same serial number, oldest first -- the rows whose cryptographic asset links the
+     * version identified by {@code uuid} supersedes. Every version keeps its own row, so without this an asset a
+     * document stopped naming would go on being sourced by the revision that last named it.
+     */
+    @Query("""
+            SELECT older.uuid
+            FROM Cbom self
+            JOIN Cbom older
+                ON older.serialNumber = self.serialNumber
+            WHERE self.uuid = :uuid AND older.version < self.version
+            ORDER BY older.version
+            """)
+    List<UUID> findSupersededVersionUuids(@Param("uuid") UUID uuid);
+
+    /**
+     * Whether a later version of the same serial number is already stored. Such a document is obsolete on arrival:
+     * ingesting it would attach the inventory to a revision another row supersedes, and the next run would detach it
+     * again.
+     */
+    @Query("""
+            SELECT COUNT(newer) > 0
+            FROM Cbom self
+            JOIN Cbom newer
+                ON newer.serialNumber = self.serialNumber
+            WHERE self.uuid = :uuid AND newer.version > self.version
+            """)
+    boolean hasLaterVersion(@Param("uuid") UUID uuid);
+
     @Query("SELECT c.uuid FROM Cbom c WHERE c.uuid IN :uuids")
     Set<UUID> findExistingUuids(@Param("uuids") List<UUID> uuids);
 
