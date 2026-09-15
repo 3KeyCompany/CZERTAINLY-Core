@@ -2162,11 +2162,36 @@ class FilterPredicatesBuilderITest extends BaseSpringBootTest {
                         .containsAll(Set.of(certificate1.getUuid(), certificate2.getUuid(), certificate3.getUuid())));
     }
 
+    /**
+     * A json-array field is absent in three ways, and all three have to be one predicate. Reached through EMPTY, which
+     * the field advertises; NOT_CONTAINS reached the same branch until unadvertised conditions were refused.
+     */
     @Test
-    void testNotContains_onJsonArrayField_notPresentPredicateHasThreeJsonChecks() {
-        // AUDIT_LOG_RESOURCE_NAME has jsonPath containing "*", so isJsonArray=true.
-        // NOT_CONTAINS must delegate to getNotPresentPredicate(isJsonArray=true) which
-        // produces OR(= '[]', IS NULL, = '[null]') — three checks for an empty JSON array.
+    void testEmpty_onJsonArrayField_notPresentPredicateHasThreeJsonChecks() {
+        // AUDIT_LOG_RESOURCE_NAME has jsonPath containing "*", so isJsonArray=true, and
+        // getNotPresentPredicate(isJsonArray=true) produces OR(= '[]', IS NULL, = '[null]').
+        SearchFilterRequestDto filterDto = aSearchFilter()
+                .withFieldSource(FilterFieldSource.PROPERTY)
+                .withField(FilterField.AUDIT_LOG_RESOURCE_NAME)
+                .withCondition(FilterConditionOperator.EMPTY)
+                .build();
+        CriteriaQuery<AuditLog> alQuery = criteriaBuilder.createQuery(AuditLog.class);
+        Root<AuditLog> alRoot = alQuery.from(AuditLog.class);
+
+        Predicate predicate = FilterPredicatesBuilder
+                .getFiltersPredicate(criteriaBuilder, alQuery, alRoot, List.of(filterDto),
+                        UNRESTRICTED_ATTRIBUTE_CONTENT);
+
+        SqmJunctionPredicate outerAnd = (SqmJunctionPredicate) predicate;
+        SqmJunctionPredicate notPresentOr = (SqmJunctionPredicate) outerAnd.getPredicates().getFirst();
+        Assertions
+                .assertEquals(3, notPresentOr.getPredicates().size(),
+                        "Not-present predicate for json-array must have three checks: empty-array, null, null-array");
+    }
+
+    /** The gate itself: an unadvertised condition never reaches the column, whatever that column's type would do. */
+    @Test
+    void testUnadvertisedCondition_isRefusedBeforeAPredicateIsBuilt() {
         SearchFilterRequestDto filterDto = aSearchFilter()
                 .withFieldSource(FilterFieldSource.PROPERTY)
                 .withField(FilterField.AUDIT_LOG_RESOURCE_NAME)
@@ -2176,22 +2201,11 @@ class FilterPredicatesBuilderITest extends BaseSpringBootTest {
         CriteriaQuery<AuditLog> alQuery = criteriaBuilder.createQuery(AuditLog.class);
         Root<AuditLog> alRoot = alQuery.from(AuditLog.class);
 
-        Predicate predicate = FilterPredicatesBuilder
-                .getFiltersPredicate(criteriaBuilder, alQuery, alRoot, List.of(filterDto),
-                        UNRESTRICTED_ATTRIBUTE_CONTENT);
-
-        // Outer AND → first child is the NOT_CONTAINS OR predicate
-        SqmJunctionPredicate outerAnd = (SqmJunctionPredicate) predicate;
-        SqmJunctionPredicate notContainsOr = (SqmJunctionPredicate) outerAnd.getPredicates().getFirst();
         Assertions
-                .assertEquals(2, notContainsOr.getPredicates().size(),
-                        "NOT_CONTAINS on json-array field must produce OR(notPresent, notLike)");
-
-        // First arm is getNotPresentPredicate(isJsonArray=true): OR(= '[]', IS NULL, = '[null]')
-        SqmJunctionPredicate notPresentOr = (SqmJunctionPredicate) notContainsOr.getPredicates().getFirst();
-        Assertions
-                .assertEquals(3, notPresentOr.getPredicates().size(),
-                        "Not-present predicate for json-array must have three checks: empty-array, null, null-array");
+                .assertThrows(ValidationException.class,
+                        () -> FilterPredicatesBuilder
+                                .getFiltersPredicate(criteriaBuilder, alQuery, alRoot, List.of(filterDto),
+                                        UNRESTRICTED_ATTRIBUTE_CONTENT));
     }
 
     private Set<Long> extractIdsFromAuditLogResponse(AuditLogResponseDto responseDto) {

@@ -45,8 +45,11 @@ public enum SearchFieldTypeEnum {
                     .of(FilterConditionOperator.EQUALS, FilterConditionOperator.NOT_EQUALS,
                             FilterConditionOperator.EMPTY, FilterConditionOperator.NOT_EMPTY),
             true, null),
-    // Like LIST but the underlying column is a native PostgreSQL array (text[]).
-    // EQUALS/NOT_EQUALS use = ANY(column) instead of column = value.
+    // Like LIST but the underlying column is a native PostgreSQL array (text[]), so EQUALS asks membership rather
+    // than equality: it matches a row whose array holds the value, not one whose array is the value.
+    // The predicate is containment -- PostgresFunctionContributor.ARRAY_CONTAINS_PATTERN, `col @> ARRAY[value]`.
+    // Not `value = ANY(col)`, which answers the same question and cannot be answered by any index at all; that
+    // form un-indexes every membership filter on every field of this type, so it must not come back.
     NATIVE_ARRAY(FilterFieldType.LIST,
             List
                     .of(FilterConditionOperator.CONTAINS, FilterConditionOperator.NOT_CONTAINS,

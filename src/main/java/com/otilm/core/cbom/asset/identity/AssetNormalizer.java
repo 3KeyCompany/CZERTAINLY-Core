@@ -1,6 +1,7 @@
 package com.otilm.core.cbom.asset.identity;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.otilm.core.cbom.asset.CompositeCurve;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -1037,11 +1038,11 @@ public record AssetNormalizer(IdentityTables tables) {
         return joinCurves(found);
     }
 
-    /** One curve token, or several joined with {@code +} in sorted order. */
+    /** One curve token, or several joined in sorted order in the composite spelling the preimage hashes. */
     private static String joinCurves(List<String> curves) {
         Set<String> distinct = new TreeSet<>();
         curves.stream().filter(curve -> curve != null && !curve.isEmpty()).forEach(distinct::add);
-        return distinct.isEmpty() ? null : String.join("+", distinct);
+        return CompositeCurve.join(List.copyOf(distinct));
     }
 
     /** Only an EC-ish family may take a curve from free text in its name. */

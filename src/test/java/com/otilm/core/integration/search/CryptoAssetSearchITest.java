@@ -32,6 +32,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 
@@ -186,6 +188,47 @@ class CryptoAssetSearchITest extends BaseSpringBootTest {
                 .of(aPropertyEqualsFilter(FilterField.CBOM_ASSET_TYPE, CryptographicAssetType.CERTIFICATE.getCode()),
                         aPropertyEqualsFilter(FilterField.CBOM_ASSET_CURVE, "secp256r1"))))
                 .isEmpty();
+    }
+
+    /**
+     * The reason the column is an array. A hybrid scheme names two curves in one asset, and the query this inventory
+     * exists to answer -- every asset that touches curve X -- has to reach it from either member. The composite itself
+     * is deliberately not selectable: it is a spelling of the pair, not a curve, and it is not offered as a value.
+     */
+    @Test
+    void aHybridAssetIsFoundByEitherOfItsCurvesAndNotByTheirCompositeSpelling() {
+        UUID hybrid = upsert(new CryptoAssetIdentityFields(CryptographicAssetType.ALGORITHM, "X25519/X448",
+                "1.3.101.110", "ecdh", "key-agree", null, "other/curve25519+other/curve448", null, null, null), null);
+
+        assertThat(search(aPropertyEqualsFilter(FilterField.CBOM_ASSET_CURVE, "other/curve25519")))
+                .containsExactly(hybrid);
+        assertThat(search(aPropertyEqualsFilter(FilterField.CBOM_ASSET_CURVE, "other/curve448")))
+                .containsExactly(hybrid);
+        assertThat(search(aPropertyEqualsFilter(FilterField.CBOM_ASSET_CURVE, "other/curve25519+other/curve448")))
+                .describedAs("the composite matches no member, so it selects nothing")
+                .isEmpty();
+        assertThat(search(aPropertyNotEmptyFilter(FilterField.CBOM_ASSET_CURVE)))
+                .describedAs("a hybrid has curves like any other asset")
+                .containsExactlyInAnyOrder(populated, hybrid);
+        assertThat(search(
+                aPropertyFilter(FilterField.CBOM_ASSET_CURVE, FilterConditionOperator.NOT_EQUALS, "other/curve25519")))
+                .describedAs("excluding a member excludes every asset that touches it, and keeps the rest --"
+                        + " including the absent curve, which the predicate's IS NULL arm is what keeps")
+                .containsExactlyInAnyOrder(populated, bare);
+    }
+
+    /**
+     * The array column answers no comparison, pattern or regex operator, and the field advertises none of them.
+     * Reaching the column, each failed inside the query as a {@code DataAccessException} no handler translates -- a
+     * 500, not a 422. All six are refused before the query is built.
+     */
+    @ParameterizedTest
+    @EnumSource(value = FilterConditionOperator.class,
+            names = {"STARTS_WITH", "ENDS_WITH", "MATCHES", "NOT_MATCHES", "GREATER", "LESSER"})
+    void anOperatorTheCurveFieldDoesNotAdvertiseIsRefusedRatherThanReachingTheColumn(FilterConditionOperator operator) {
+        assertThatThrownBy(() -> search(aPropertyFilter(FilterField.CBOM_ASSET_CURVE, operator, "secp256r1")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("does not support");
     }
 
     // ---- free text, refuted-OID and source-CBOM filters ----

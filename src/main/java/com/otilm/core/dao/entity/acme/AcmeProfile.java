@@ -103,6 +103,10 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited
     @ToString.Exclude
     private ProtocolCertificateAssociations certificateAssociations;
 
+    @Column(name = "eab_secret_uuids")
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    private List<UUID> eabSecretUuids = new ArrayList<>();
+
     @Column(name = "preauthorized_identifiers", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private List<AcmePreauthorizedIdentifierDto> preauthorizedIdentifiers = new ArrayList<>();
@@ -110,6 +114,14 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited
     @Column(name = "identifier_authorization_mode")
     @Enumerated(EnumType.STRING)
     private AcmeIdentifierAuthorizationMode identifierAuthorizationMode = AcmeIdentifierAuthorizationMode.PREAUTHORIZED_OR_CHALLENGE;
+
+    /**
+     * Whether a newAccount request must carry an External Account Binding. Derived from the configured keys rather than
+     * stored, so a profile can never advertise the requirement with nothing to verify a binding against.
+     */
+    public boolean isExternalAccountRequired() {
+        return eabSecretUuids != null && !eabSecretUuids.isEmpty();
+    }
 
     /** The policy as a list that is never null, so callers need not repeat the check. */
     public List<AcmePreauthorizedIdentifierDto> preauthorizedIdentifierList() {
@@ -143,6 +155,7 @@ public class AcmeProfile extends UniquelyIdentifiedAndAudited
         acmeProfileDto.setRequireTermsOfService(requireTermsOfService);
         acmeProfileDto.setWebsiteUrl(website);
         acmeProfileDto.setTermsOfServiceChangeUrl(termsOfServiceChangeUrl);
+        acmeProfileDto.setEabSecretUuids(eabSecretUuids == null ? new ArrayList<>() : List.copyOf(eabSecretUuids));
         acmeProfileDto.setPreauthorizedIdentifiers(List.copyOf(preauthorizedIdentifierList()));
         acmeProfileDto.setIdentifierAuthorizationMode(effectiveIdentifierAuthorizationMode());
         if (raProfile != null) {
