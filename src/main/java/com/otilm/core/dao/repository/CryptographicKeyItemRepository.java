@@ -1,6 +1,5 @@
 package com.otilm.core.dao.repository;
 
-import com.otilm.api.model.core.cryptography.key.KeyState;
 import com.otilm.core.dao.entity.CryptographicKeyItem;
 import com.otilm.core.model.crypto.CryptographicKeyItemBasicModel;
 import jakarta.persistence.LockModeType;
@@ -42,13 +41,26 @@ public interface CryptographicKeyItemRepository extends SecurityFilterRepository
             """)
     int updateEnabledIfChanged(@Param("uuid") UUID uuid, @Param("enabled") boolean enabled);
 
+    /**
+     * Clears key material and marks the item destroyed while preserving its current compromise classification.
+     *
+     * @param uuid non-null UUID of the key item to finalize
+     * @return one if the item exists, including an already destroyed item; zero if it does not exist
+     */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE CryptographicKeyItem item
-            SET item.keyData = NULL, item.state = :finalState, item.updatedAt = CURRENT_TIMESTAMP
+            SET item.keyData = NULL,
+                item.state = CASE
+                    WHEN item.state IN (com.otilm.api.model.core.cryptography.key.KeyState.COMPROMISED,
+                                        com.otilm.api.model.core.cryptography.key.KeyState.DESTROYED_COMPROMISED)
+                        THEN com.otilm.api.model.core.cryptography.key.KeyState.DESTROYED_COMPROMISED
+                    ELSE com.otilm.api.model.core.cryptography.key.KeyState.DESTROYED
+                END,
+                item.updatedAt = CURRENT_TIMESTAMP
             WHERE item.uuid = :uuid
             """)
-    int finalizeKeyItemDestruction(@Param("uuid") UUID uuid, @Param("finalState") KeyState finalState);
+    int finalizeKeyItemDestruction(@Param("uuid") UUID uuid);
 
     Optional<CryptographicKeyItem> findByFingerprint(String fingerprint);
 

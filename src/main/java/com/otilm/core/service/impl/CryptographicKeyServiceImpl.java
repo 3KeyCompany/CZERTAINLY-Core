@@ -1436,13 +1436,10 @@ public class CryptographicKeyServiceImpl implements CryptographicKeyExternalServ
 
     private boolean destroyKeyItem(CryptographicKeyFullModel key, CryptographicKeyItemBasicModel keyItem)
             throws ConnectorException, NotFoundException {
-        KeyState finalState = keyItem.state().equals(KeyState.COMPROMISED)
-                ? KeyState.DESTROYED_COMPROMISED
-                : KeyState.DESTROYED;
         if (!keyItem.state().equals(KeyState.DEACTIVATED) && !keyItem.state().equals(KeyState.PRE_ACTIVE)
                 && !keyItem.state().equals(KeyState.COMPROMISED)) {
             String message = "Invalid state of key " + keyItem.uuid() + ". Key is " + keyItem.state().getLabel()
-                    + ", hence can't be set to " + finalState.getLabel() + ".";
+                    + ", hence can't be set to " + KeyState.DESTROYED.getLabel() + ".";
             keyEventHistoryService
                     .addEventHistory(KeyEvent.DESTROY, KeyEventStatus.FAILED, message, null, keyItem.uuid());
             return false;
@@ -1456,7 +1453,7 @@ public class CryptographicKeyServiceImpl implements CryptographicKeyExternalServ
                 ? "Key item %s was destroyed remotely, but local finalization failed."
                 : "Local destruction of key item %s could not be completed.";
         try {
-            cryptographicKeyWriter.removeKeyItemContentAndSetState(keyItem.uuid(), finalState);
+            cryptographicKeyWriter.finalizeKeyItemDestruction(keyItem.uuid());
             failureMessage = "Key item %s was destroyed, but cache invalidation failed.";
             evictKeyItemCache(keyItem.uuid());
         } catch (Exception e) {

@@ -183,7 +183,7 @@ class CryptographicKeyServiceImplSelectionTest {
             case ENABLE -> verify(writer).setKeyItemEnabled(itemUuid, true);
             case DISABLE -> verify(writer).setKeyItemEnabled(itemUuid, false);
             case DELETE -> verify(writer).deleteKeyItem(itemUuid);
-            case DESTROY -> verify(writer).removeKeyItemContentAndSetState(itemUuid, KeyState.DESTROYED);
+            case DESTROY -> verify(writer).finalizeKeyItemDestruction(itemUuid);
             case COMPROMISE -> verify(writer).setKeyItemCompromised(itemUuid, reason);
             case USAGE -> verify(writer).updateUsage(itemUuid, usages);
         }

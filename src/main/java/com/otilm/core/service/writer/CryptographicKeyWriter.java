@@ -360,15 +360,15 @@ public class CryptographicKeyWriter {
     }
 
     /**
-     * Clears local key material and persists the final state and audit timestamp after remote destruction.
+     * Clears local key material and marks the item destroyed, preserving its current compromise classification and
+     * reason. Updates the audit timestamp and records a successful destruction event, including on repeated calls.
      *
-     * @param keyItemUuid UUID of the key item to finalize
-     * @param finalState DESTROYED or DESTROYED_COMPROMISED, as determined by the caller
+     * @param keyItemUuid non-null UUID of the key item to finalize
      * @throws NotFoundException if the item no longer exists
      */
     @Transactional
-    public void removeKeyItemContentAndSetState(UUID keyItemUuid, KeyState finalState) throws NotFoundException {
-        if (cryptographicKeyItemRepository.finalizeKeyItemDestruction(keyItemUuid, finalState) == 0) {
+    public void finalizeKeyItemDestruction(UUID keyItemUuid) throws NotFoundException {
+        if (cryptographicKeyItemRepository.finalizeKeyItemDestruction(keyItemUuid) == 0) {
             throw new NotFoundException(CryptographicKeyItem.class, keyItemUuid);
         }
         keyEventHistoryService

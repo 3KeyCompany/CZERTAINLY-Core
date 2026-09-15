@@ -246,7 +246,7 @@ class CryptographicKeyServiceImplParentAccessTest {
         switch (operation) {
             case ENABLE -> access.verify(writer).setKeyItemEnabled(itemUuid, true);
             case DISABLE -> access.verify(writer).setKeyItemEnabled(itemUuid, false);
-            case DESTROY -> access.verify(writer).removeKeyItemContentAndSetState(itemUuid, KeyState.DESTROYED);
+            case DESTROY -> access.verify(writer).finalizeKeyItemDestruction(itemUuid);
             case COMPROMISE ->
                 access.verify(writer).setKeyItemCompromised(itemUuid, KeyCompromiseReason.UNAUTHORIZED_DISCLOSURE);
             case UPDATE_USAGES -> access.verify(writer).updateUsage(itemUuid, requestedUsages);

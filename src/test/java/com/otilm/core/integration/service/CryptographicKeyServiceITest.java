@@ -2,6 +2,10 @@ package com.otilm.core.integration.service;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.extension.Parameters;
+import com.github.tomakehurst.wiremock.extension.ServeEventListener;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import com.otilm.api.exception.AlreadyExistException;
 import com.otilm.api.exception.AttributeException;
 import com.otilm.api.exception.ConnectorException;
@@ -107,6 +111,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -119,6 +124,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -850,6 +856,78 @@ class CryptographicKeyServiceITest extends BaseSpringBootTest {
                         cryptographicKeyService
                                 .getKeyItem(key.getSecuredUuid(), privateKeyItem.getUuid().toString())
                                 .getState());
+    }
+
+    @Test
+    void destroyKey_preservesCompromiseCommittedDuringConnectorCall() throws Exception {
+        // given
+        UUID itemUuid = privateKeyItem.getUuid();
+        KeyCompromiseReason reason = KeyCompromiseReason.UNAUTHORIZED_DISCLOSURE;
+        privateKeyItem.setState(KeyState.DEACTIVATED);
+        cryptographicKeyItemRepository.saveAndFlush(privateKeyItem);
+        CompletableFuture<Optional<String>> compromise = compromiseBeforeDestructionResponse(itemUuid, reason);
+
+        // when
+        cryptographicKeyService.destroyKey(key.getUuid(), List.of(itemUuid.toString()));
+
+        // then
+        Assertions.assertTrue(compromise.get(10, TimeUnit.SECONDS).isEmpty());
+        CryptographicKeyItem stored = cryptographicKeyItemRepository.findByUuid(itemUuid).orElseThrow();
+        Assertions.assertEquals(KeyState.DESTROYED_COMPROMISED, stored.getState());
+        Assertions.assertEquals(reason, stored.getReason());
+        Assertions.assertNull(stored.getKeyData());
+        var history = cryptographicKeyEventHistoryRepository.findByKeyOrderByCreatedDesc(stored);
+        Assertions
+                .assertTrue(history
+                        .stream()
+                        .anyMatch(event -> event.getEvent() == KeyEvent.COMPROMISED
+                                && event.getStatus() == KeyEventStatus.SUCCESS));
+        Assertions
+                .assertTrue(history
+                        .stream()
+                        .anyMatch(event -> event.getEvent() == KeyEvent.DESTROY
+                                && event.getStatus() == KeyEventStatus.SUCCESS));
+    }
+
+    private CompletableFuture<Optional<String>> compromiseBeforeDestructionResponse(UUID itemUuid,
+            KeyCompromiseReason reason) {
+        CompletableFuture<Optional<String>> compromise = new CompletableFuture<>();
+        String destructionPath = "/v1/cryptographyProvider/tokens/" + tokenInstanceReference.getTokenInstanceUuid()
+                + "/keys/" + privateKeyItem.getKeyReferenceUuid();
+        ServeEventListener listener = new ServeEventListener() {
+            @Override
+            public void beforeResponseSent(ServeEvent serveEvent, Parameters parameters) {
+                if (!serveEvent.getRequest().getUrl().equals(destructionPath)) {
+                    return;
+                }
+                try {
+                    TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+                    Optional<String> rejection = transaction.execute(status -> {
+                        jdbcTemplate.execute("SET LOCAL lock_timeout = '5s'");
+                        try {
+                            return cryptographicKeyWriter.setKeyItemCompromised(itemUuid, reason);
+                        } catch (NotFoundException e) {
+                            throw new IllegalStateException("Key item disappeared during concurrent compromise", e);
+                        }
+                    });
+                    compromise.complete(rejection);
+                } catch (Exception e) {
+                    compromise.completeExceptionally(e);
+                }
+            }
+
+            @Override
+            public String getName() {
+                return "compromise-before-destruction-response";
+            }
+        };
+        mockServer.stop();
+        mockServer = new WireMockServer(WireMockConfiguration.wireMockConfig().dynamicPort().extensions(listener));
+        mockServer.start();
+        connector.setUrl("http://localhost:" + mockServer.port());
+        connectorRepository.saveAndFlush(connector);
+        mockServer.stubFor(WireMock.delete(WireMock.urlPathEqualTo(destructionPath)).willReturn(WireMock.ok()));
+        return compromise;
     }
 
     @Test
@@ -1844,26 +1922,29 @@ class CryptographicKeyServiceITest extends BaseSpringBootTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = KeyState.class, names = {"DESTROYED", "DESTROYED_COMPROMISED"})
-    void finalizeKeyItemDestruction_clearsMaterialAndPersistsFinalStateAndTimestamp(KeyState finalState)
+    @CsvSource({
+            "PRE_ACTIVE, DESTROYED",
+            "ACTIVE, DESTROYED",
+            "DEACTIVATED, DESTROYED",
+            "COMPROMISED, DESTROYED_COMPROMISED",
+            "DESTROYED, DESTROYED",
+            "DESTROYED_COMPROMISED, DESTROYED_COMPROMISED"})
+    void finalizeKeyItemDestruction_derivesFinalStateFromStoredState(KeyState entryState, KeyState expectedState)
             throws NotFoundException {
         // given
         UUID itemUuid = privateKeyItem.getUuid();
         LocalDateTime previousUpdate = LocalDateTime.of(2020, 1, 1, 0, 0);
-        KeyState entryState = finalState == KeyState.DESTROYED_COMPROMISED
-                ? KeyState.COMPROMISED
-                : KeyState.DEACTIVATED;
         jdbcTemplate
                 .update("UPDATE " + dbSchema + ".cryptographic_key_item SET state = ?, updated_at = ? WHERE uuid = ?",
                         entryState.name(), previousUpdate, itemUuid);
 
         // when
-        cryptographicKeyWriter.removeKeyItemContentAndSetState(itemUuid, finalState);
+        cryptographicKeyWriter.finalizeKeyItemDestruction(itemUuid);
 
         // then
         CryptographicKeyItem storedItem = cryptographicKeyItemRepository.findByUuid(itemUuid).orElseThrow();
         Assertions.assertNull(storedItem.getKeyData());
-        Assertions.assertEquals(finalState, storedItem.getState());
+        Assertions.assertEquals(expectedState, storedItem.getState());
         Assertions.assertTrue(storedItem.getUpdatedAt().isAfter(previousUpdate));
         Assertions.assertEquals(privateKeyItem.getKeyUuid(), storedItem.getKeyUuid());
         CryptographicKeyItem otherItem = cryptographicKeyItemRepository
@@ -1877,11 +1958,9 @@ class CryptographicKeyServiceITest extends BaseSpringBootTest {
     void finalizeKeyItemDestruction_throwsNotFoundException_whenItemDoesNotExist() {
         // given
         UUID missingItemUuid = UUID.randomUUID();
-        KeyState finalState = KeyState.DESTROYED;
 
         // when
-        org.junit.jupiter.api.function.Executable finalizeDestruction = () -> cryptographicKeyWriter
-                .removeKeyItemContentAndSetState(missingItemUuid, finalState);
+        Executable finalizeDestruction = () -> cryptographicKeyWriter.finalizeKeyItemDestruction(missingItemUuid);
 
         // then
         Assertions.assertThrows(NotFoundException.class, finalizeDestruction);
