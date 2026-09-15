@@ -165,7 +165,7 @@ public class TokenProfileControllerImpl implements TokenProfileController {
 
     @Override
     @AuditLogged(module = Module.CRYPTOGRAPHIC_KEYS, resource = Resource.TOKEN_PROFILE,
-            affiliatedResource = Resource.TOKEN, operation = Operation.LIST_KEY_CREATION_TYPES)
+            affiliatedResource = Resource.TOKEN, operation = Operation.LIST_KEY_REQUEST_TYPES)
     public List<KeyRequestType> listSupportedKeyRequestTypes(String tokenInstanceUuid, String tokenProfileUuid)
             throws NotFoundException, ConnectorException {
         SecuredParentUUID tokenInstanceUuidSecured = SecuredParentUUID.fromString(tokenInstanceUuid);
