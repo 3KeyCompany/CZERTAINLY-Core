@@ -32,6 +32,7 @@ import com.otilm.core.cbom.client.BomSearchPage;
 import com.otilm.core.cbom.client.CbomRepositoryClient;
 import com.otilm.core.cbom.ingest.CbomAssetDetachService;
 import com.otilm.core.cbom.ingest.CbomAssetIngestService;
+import com.otilm.core.cluster.ClusterOperationSynchronizer;
 import com.otilm.core.comparator.SearchFieldDataComparator;
 import com.otilm.core.config.CbomSyncProperties;
 import com.otilm.core.dao.CryptoAssetConstraintTranslator;
@@ -129,10 +130,12 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     private static final String DEDUP_CONSTRAINT = "cbom_serial_version_unique";
 
     /**
-     * What a CBOM's row says after a deletion withdrew its contribution to the inventory and then could not remove the
-     * header. The assets really are gone, so the row must owe an ingest rather than claim one.
+     * The cryptographic asset inventory's reference to a CBOM header, {@code ON DELETE RESTRICT}. It is today the only
+     * foreign key in the schema that names {@code cbom(uuid)}, which is why a deletion refused by it is the one failure
+     * that leaves the row {@code SYNCED} -- and why that decision is keyed on the constraint rather than on the
+     * exception type. See {@link #deleteWithdrawnRow}.
      */
-    private static final String DELETION_WITHDREW_THE_INVENTORY = "A deletion withdrew this CBOM's cryptographic assets and then failed; they will be ingested again.";
+    private static final String INVENTORY_SOURCE_CONSTRAINT = "crypto_asset_source_to_cbom_key";
 
     private CbomRepository cbomRepository;
 
@@ -163,6 +166,8 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     private CbomTombstoneWriter tombstoneWriter;
 
     private CbomTombstoneRepository tombstoneRepository;
+
+    private ClusterOperationSynchronizer clusterSynchronizer;
 
     private AuditorAware<String> auditorAware;
 
@@ -239,6 +244,11 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     @Autowired
     public void setTombstoneRepository(CbomTombstoneRepository tombstoneRepository) {
         this.tombstoneRepository = tombstoneRepository;
+    }
+
+    @Autowired
+    public void setClusterSynchronizer(ClusterOperationSynchronizer clusterSynchronizer) {
+        this.clusterSynchronizer = clusterSynchronizer;
     }
 
     @Autowired
@@ -431,7 +441,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     @ExternalAuthorization(resource = Resource.CBOM, action = ResourceAction.DELETE)
     public void deleteCbom(UUID uuid) throws NotFoundException {
         Cbom cbom = getEntity(SecuredUUID.fromUUID(uuid));
-        assetDetachService.withdrawWaiting(uuid);
+        withdrawForDeletion(uuid);
         deleteWithdrawnRow(uuid);
         logger
                 .logEvent(Operation.DELETE, OperationResult.SUCCESS, null,
@@ -441,28 +451,102 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     }
 
     /**
+     * Withdraws the CBOM's contribution to the inventory for a keyed delete, and settles what a failure leaves behind.
+     *
+     * <p>
+     * A withdrawal that threw did not necessarily withdraw nothing: every batch commits on its own, so a failure on
+     * batch <i>k</i> leaves <i>1..k-1</i> withdrawn and their orphan assets irreversibly deleted. Left unguarded the
+     * exception propagates out of this method and the row keeps saying {@code SYNCED} while sourcing part of an
+     * inventory that is gone -- on neither work list, rebuilt by nothing.
+     * {@link CbomAssetDetachService.WithdrawalFailedException} is what tells the two cases apart, and the failure is
+     * recorded only for the one that changed the inventory.
+     *
+     * <p>
+     * The bulk path does the same thing for each entry, differing only in that it reports the failure per entry rather
+     * than raising it.
+     */
+    private void withdrawForDeletion(UUID uuid) {
+        try {
+            assetDetachService.withdrawWaiting(uuid);
+        } catch (RuntimeException e) {
+            recordPartialWithdrawal(uuid, e);
+            final String safeMessage = safeDeleteFailureMessage(e);
+            logger
+                    .logEvent(Operation.DELETE, OperationResult.FAILURE, null,
+                            List.of(new ResourceObjectIdentity(null, uuid)), safeMessage);
+            throw causeOf(e) instanceof DataIntegrityViolationException
+                    ? new ValidationException(ValidationError.create(safeMessage))
+                    : e;
+        }
+    }
+
+    /** What a withdrawal left behind, recorded only when it left something behind. */
+    private void recordPartialWithdrawal(UUID uuid, RuntimeException failure) {
+        if (failure instanceof CbomAssetDetachService.WithdrawalFailedException withdrawal
+                && withdrawal.withdrewSomething()) {
+            recordWithdrawnButNotDeleted(uuid);
+        }
+    }
+
+    /**
+     * One delete failure, in text this platform shaped.
+     *
+     * <p>
+     * The inventory's foreign key is RESTRICT, so a constraint violation is the expected refusal and its translation is
+     * the actionable sentence. Anything else is infrastructure, and its message quotes rows.
+     */
+    private static String safeDeleteFailureMessage(RuntimeException failure) {
+        final Throwable cause = causeOf(failure);
+        return cause instanceof DataIntegrityViolationException
+                ? CryptoAssetConstraintTranslator.describe(cause)
+                : "Error deleting CBOM entry";
+    }
+
+    /** A withdrawal failure is a wrapper carrying what committed; every other failure speaks for itself. */
+    private static Throwable causeOf(RuntimeException failure) {
+        return failure instanceof CbomAssetDetachService.WithdrawalFailedException ? failure.getCause() : failure;
+    }
+
+    /**
      * Deletes the withdrawn row and tombstones it in one transaction, flushing inside it so that a refusal from the
      * cryptographic asset inventory -- whose foreign key is RESTRICT -- can be shaped here. Left to the commit, the
      * violation would surface after the method returns, with only the driver's own text to describe it, and that text
      * quotes the failing row.
      *
      * <p>
-     * That refusal is also the one failure the CBOM is <b>not</b> marked failed for. The withdrawal releases the
-     * asset-sync lock at every batch commit, so an ingest of the same document can re-attach sources in the gap before
-     * this delete: the row is then genuinely sourced again and {@code SYNCED} is true of it. Recording
-     * {@link #DELETION_WITHDREW_THE_INVENTORY} there would force a needless re-ingest under a sentence that is no
-     * longer true, so the operator is told to retry instead. Every other failure leaves a row that says SYNCED and
-     * sources nothing, which is what that state exists for.
+     * That refusal is also the one failure the CBOM is <b>not</b> marked failed for: the row is genuinely sourced
+     * again, so {@code SYNCED} is true of it, and recording
+     * {@link CbomAssetSyncStateWriter#DELETION_WITHDREW_THE_INVENTORY} would force a needless re-ingest of a document
+     * nothing is wrong with. The operator is told to retry instead. Every other failure leaves a row that says SYNCED
+     * and sources nothing, which is what that state exists for.
+     *
+     * <p>
+     * Narrowed to the one constraint that expresses that: {@code crypto_asset_source_to_cbom_key} is today the only
+     * foreign key in the schema referencing {@code cbom(uuid)}, and the tombstone insert cannot conflict, so every
+     * violation reaching here is the inventory's. Resting the carve-out on the constraint name rather than on the
+     * exception type is what keeps that an argument about this code rather than about the schema it happens to sit in
+     * -- the next foreign key added to {@code cbom} would otherwise silently join it.
      */
     private void deleteWithdrawnRow(UUID uuid) {
         try {
             transactionHandler.runInNewTransaction(() -> deleteAndTombstone(uuid));
         } catch (DataIntegrityViolationException e) {
+            if (!theInventoryRefused(e)) {
+                recordWithdrawnButNotDeleted(uuid);
+            }
             throw new ValidationException(ValidationError.create(CryptoAssetConstraintTranslator.describe(e)));
         } catch (RuntimeException e) {
             recordWithdrawnButNotDeleted(uuid);
             throw e;
         }
+    }
+
+    /** Whether the cryptographic asset inventory is what refused the deletion -- see {@link #deleteWithdrawnRow}. */
+    private static boolean theInventoryRefused(Throwable failure) {
+        return CryptoAssetConstraintTranslator
+                .constraintNameOf(failure)
+                .filter(INVENTORY_SOURCE_CONSTRAINT::equalsIgnoreCase)
+                .isPresent();
     }
 
     /**
@@ -478,7 +562,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
      */
     private void recordWithdrawnButNotDeleted(UUID uuid) {
         try {
-            assetSyncStateWriter.markFailedEvenIfSynced(uuid, DELETION_WITHDREW_THE_INVENTORY);
+            assetSyncStateWriter.markWithdrawnButNotDeleted(uuid);
         } catch (RuntimeException e) {
             logger
                     .getLogger()
@@ -490,8 +574,20 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     /**
      * The tombstone commits with the deletion or with neither. Without it the next sync finds the document still
      * offered by the repository, sees nothing in the live table, and re-ingests exactly what the operator removed.
+     *
+     * <p>
+     * Under the CBOM's asset-sync lock, which the withdrawal has by now released: it is transaction-scoped, so it went
+     * with the last batch's commit, and the gap between that commit and this delete is the last window in which an
+     * ingest of the same document can re-attach sources. Closing it makes the withdrawal's emptiness hold until the
+     * header is gone, in both directions -- the RESTRICT refusal on this side, and on the other an ingest writing
+     * {@code crypto_asset_source} rows against a header that has just been deleted.
+     *
+     * <p>
+     * First lock of the transaction, as the ranking on {@link CbomAssetIngestService} requires of every blocking
+     * acquisition of this key.
      */
     private void deleteAndTombstone(UUID uuid) {
+        clusterSynchronizer.lock(CbomAssetIngestService.assetSyncLockKey(uuid));
         final Cbom cbom = cbomRepository.findById(uuid).orElse(null);
         if (cbom == null) {
             return;
@@ -520,22 +616,23 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                 continue;
             }
             try {
-                // Outside the catch below, which says the inventory was withdrawn. A withdrawal that threw withdrew
-                // nothing, and recording DELETION_WITHDREW_THE_INVENTORY for it would flip a genuinely SYNCED row to
-                // FAILED carrying a sentence that is not true of it -- one an operator can now search for.
                 assetDetachService.withdrawWaiting(uuid);
-            } catch (Exception ex) {
+            } catch (RuntimeException ex) {
+                // Only if it withdrew something. Every batch commits on its own, so a withdrawal that threw may have
+                // emptied part of the inventory -- but one that threw before its first commit did not, and recording
+                // the sentence for that would flip a genuinely SYNCED row to FAILED under a statement untrue of it.
+                recordPartialWithdrawal(uuid, ex);
                 recordBulkDeleteFailure(uuid, ex, messages);
                 continue;
             }
             try {
                 transactionHandler.runInNewTransaction(() -> deleteAndTombstone(uuid));
-            } catch (Exception ex) {
+            } catch (RuntimeException ex) {
                 // The withdrawal committed and the header did not, so the row says SYNCED and sources nothing. The
                 // backlog pass rebuilds it, but only if the state says so -- and markFailed will not overwrite
                 // SYNCED. The inventory's own refusal is the exception, for the reason deleteWithdrawnRow gives:
                 // something re-attached sources, so the row really is synced and only the delete failed.
-                if (!(ex instanceof DataIntegrityViolationException)) {
+                if (!theInventoryRefused(ex)) {
                     recordWithdrawnButNotDeleted(uuid);
                 }
                 recordBulkDeleteFailure(uuid, ex, messages);
@@ -556,10 +653,8 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
      * The cryptographic asset inventory's foreign key is RESTRICT, so a constraint violation here is reachable and its
      * driver message quotes the failing row. Both the response and the audit entry carry the translation.
      */
-    private void recordBulkDeleteFailure(UUID uuid, Exception ex, List<BulkActionMessageDto> messages) {
-        final String safeMessage = ex instanceof DataIntegrityViolationException
-                ? CryptoAssetConstraintTranslator.describe(ex)
-                : "Error deleting CBOM entry";
+    private void recordBulkDeleteFailure(UUID uuid, RuntimeException ex, List<BulkActionMessageDto> messages) {
+        final String safeMessage = safeDeleteFailureMessage(ex);
         messages.add(BulkActionMessageDto.failureWithMessage(uuid.toString(), "", safeMessage));
         logger
                 .logEvent(Operation.DELETE, OperationResult.FAILURE, null,
@@ -1460,6 +1555,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
             case FAILED -> run.ingestFailed++;
             case LOCKED_ELSEWHERE -> run.ingestLockedElsewhere++;
             case SUPERSEDED -> run.ingestSuperseded++;
+            case DELETED -> run.ingestDeleted++;
             // Nothing happened and nothing was left owing, so there is nothing for the run report to say. Both passes
             // return before reaching the ingest when the switch is off; this arm is what keeps a future caller that
             // does not from being counted as a failure.
@@ -1494,6 +1590,8 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         int ingestFailed;
         int ingestLockedElsewhere;
         int ingestSuperseded;
+        /** CBOMs an operator deleted while the run was ingesting their assets. */
+        int ingestDeleted;
         int ingestUnavailable;
         /**
          * Document reads of the ingest pass that the repository answered, which is what tells an outage from a
@@ -1513,9 +1611,9 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                     + "%d offers of permanently skipped entries failed again; %d entries an operator had deleted were not stored again")
                     .formatted(read, pages, stored, duplicates, originals, invalid, recordedForRetry, retried, resolved,
                             permanentlySkipped, alreadyPermanent, tombstoned)
-                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d were superseded by a later version, %d documents could not be re-read"
+                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d were superseded by a later version, %d were deleted mid-ingest, %d documents could not be re-read"
                             .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestSuperseded,
-                                    ingestUnavailable);
+                                    ingestDeleted, ingestUnavailable);
         }
     }
 }

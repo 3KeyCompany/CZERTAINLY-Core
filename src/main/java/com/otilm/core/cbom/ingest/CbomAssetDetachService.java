@@ -1,5 +1,6 @@
 package com.otilm.core.cbom.ingest;
 
+import com.otilm.api.exception.PlatformException;
 import com.otilm.core.cluster.ClusterOperationSynchronizer;
 import com.otilm.core.config.CbomSyncProperties;
 import com.otilm.core.dao.repository.cbom.CryptoAssetRepository;
@@ -11,6 +12,7 @@ import com.otilm.core.service.writer.cbom.CryptoAssetWriter;
 import java.util.List;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +64,19 @@ import org.springframework.transaction.annotation.Transactional;
  * rest was reached, and the counts describe what really happened either way. That is safe because the caller leaves the
  * CBOM owing the work and the next run redoes the whole withdrawal idempotently; it is not safe to ignore, because a
  * revision left half-withdrawn still sources part of an inventory another revision now speaks for.
+ *
+ * <p>
+ * The same reasoning applies to a batch that <em>throws</em>, which is why it does not propagate bare:
+ * {@link WithdrawalFailedException} carries what the batches before it committed, so a caller can tell a withdrawal
+ * that did nothing from one that half-emptied the inventory and must record the CBOM as owing a rebuild.
+ *
+ * <p>
+ * <b>The work list is read under the lock, one page per batch.</b> Reading it once at entry would make the promise
+ * weaker than it looks: the lock is released at every batch commit, so a snapshot taken before the first acquisition --
+ * or before the previous commit -- misses every source an ingest of the same document attaches in the gap, and
+ * {@code complete()} would still be true. Re-reading under the lock also makes the empty case take the lock at all,
+ * which is what excludes an ingest writing a CBOM's first sources while it is being deleted. The loop ends on a page
+ * the lock says is empty, so it converges only because an ingest of one document is itself finite.
  */
 @Slf4j
 @Service
@@ -153,27 +168,42 @@ public class CbomAssetDetachService {
     }
 
     private Withdrawal withdrawInBatches(UUID cbomUuid, Contention contention) {
-        final List<UUID> assets = sourceRepository.findAssetUuidsByCbomUuid(cbomUuid);
         Withdrawal total = Withdrawal.NOTHING;
-        for (int from = 0; from < assets.size(); from += batchSize) {
-            final List<UUID> batch = assets.subList(from, Math.min(from + batchSize, assets.size()));
-            final Withdrawal done = transactionHandler
-                    .runInNewTransaction(() -> withdrawBatchUnderClusterLock(cbomUuid, batch, contention));
+        while (true) {
+            final Batch done;
+            try {
+                done = transactionHandler
+                        .runInNewTransaction(() -> withdrawBatchUnderClusterLock(cbomUuid, contention));
+            } catch (RuntimeException e) {
+                throw new WithdrawalFailedException(total, e);
+            }
             if (done == null) {
                 return total.plus(Withdrawal.ABANDONED);
             }
-            total = total.plus(done);
+            total = total.plus(done.withdrawn());
+            if (done.last()) {
+                return total;
+            }
         }
-        return total;
+    }
+
+    /** One batch's outcome: what it withdrew, and whether the page it read under the lock was the last one. */
+    private record Batch(Withdrawal withdrawn, boolean last) {
     }
 
     /** One batch, inside the transaction that holds the cluster lock. Null when another node holds it. */
-    private Withdrawal withdrawBatchUnderClusterLock(UUID cbomUuid, List<UUID> assets, Contention contention) {
+    private Batch withdrawBatchUnderClusterLock(UUID cbomUuid, Contention contention) {
         final String lockKey = CbomAssetIngestService.assetSyncLockKey(cbomUuid);
         if (contention == Contention.WAIT) {
             clusterSynchronizer.lock(lockKey);
         } else if (!clusterSynchronizer.tryLock(lockKey)) {
             return null;
+        }
+        // Under the lock, never once at entry -- see the class comment. An empty page here is the withdrawal's last
+        // word, and it is worth what the lock makes it worth: nothing can be attaching sources while it is read.
+        final List<UUID> assets = sourceRepository.findAssetUuidsByCbomUuid(cbomUuid, Limit.of(batchSize));
+        if (assets.isEmpty()) {
+            return new Batch(Withdrawal.NOTHING, true);
         }
         // Before the first crypto_asset row lock, as on the ingest path: deleting an orphan deletes its aliases by
         // cascade, so this transaction may decide about aliases as well as rows.
@@ -198,6 +228,41 @@ public class CbomAssetDetachService {
                 deleted++;
             }
         }
-        return new Withdrawal(detached, deleted, kept, true);
+        return new Batch(new Withdrawal(detached, deleted, kept, true), assets.size() < batchSize);
+    }
+
+    /**
+     * A withdrawal that stopped on a failure, carrying what the batches before it committed.
+     *
+     * <p>
+     * "Threw" and "withdrew nothing" are not the same thing here, and a caller that treats them as one strands rows.
+     * Every batch commits on its own, so a failure on batch <i>k</i> leaves <i>1..k-1</i> withdrawn and their orphan
+     * assets irreversibly deleted; a delete path that then leaves the CBOM reading {@code SYNCED} has put it on no work
+     * list at all, because the backlog pass selects {@code PENDING} and the retry pass {@code IN_PROGRESS}/
+     * {@code FAILED}. {@link #withdrewSomething()} is the question those callers actually need answered.
+     *
+     * <p>
+     * The message is fixed rather than the cause's: it reaches a caller that may put it on the wire, and a database
+     * failure's own text quotes the failing row. That is what {@link PlatformException} marks -- text this platform
+     * authored, carrying nothing the database said.
+     */
+    public static class WithdrawalFailedException extends RuntimeException implements PlatformException {
+
+        private final transient Withdrawal committed;
+
+        public WithdrawalFailedException(Withdrawal committed, RuntimeException cause) {
+            super("Withdrawing the CBOM's cryptographic assets failed", cause);
+            this.committed = committed;
+        }
+
+        /** What committed before the failure. */
+        public Withdrawal committed() {
+            return committed;
+        }
+
+        /** Whether the inventory was changed at all, which is what decides if the CBOM now owes a rebuild. */
+        public boolean withdrewSomething() {
+            return committed.detached() > 0 || committed.deleted() > 0 || committed.kept() > 0;
+        }
     }
 }

@@ -18,6 +18,7 @@ import com.otilm.api.model.core.cbom.CbomAssetSyncState;
 import com.otilm.api.model.core.cbom.CbomDetailDto;
 import com.otilm.api.model.core.cbom.CbomDto;
 import com.otilm.api.model.core.cbom.CbomUploadRequestDto;
+import com.otilm.api.model.core.cryptoasset.CryptographicAssetType;
 import com.otilm.api.model.core.search.SearchFieldDataByGroupDto;
 import com.otilm.api.model.core.search.SearchFieldDataDto;
 import com.otilm.api.model.core.settings.PlatformSettingsDto;
@@ -25,6 +26,8 @@ import com.otilm.api.model.core.settings.SettingsSection;
 import com.otilm.api.model.core.settings.UtilsSettingsDto;
 import com.otilm.api.model.scheduler.SchedulerJobExecutionStatus;
 import com.otilm.core.attribute.engine.AttributeEngine;
+import com.otilm.core.cbom.asset.AssetRowKeys;
+import com.otilm.core.cbom.asset.CryptoAssetIdentityFields;
 import com.otilm.core.cbom.ingest.CbomAssetDetachService;
 import com.otilm.core.dao.entity.Cbom;
 import com.otilm.core.dao.entity.ScheduledJob;
@@ -47,6 +50,8 @@ import com.otilm.core.security.authz.SecurityFilter;
 import com.otilm.core.service.CbomExternalService;
 import com.otilm.core.service.CbomInternalService;
 import com.otilm.core.service.writer.cbom.CbomAssetSyncStateWriter;
+import com.otilm.core.service.writer.cbom.CryptoAssetSourceWriter;
+import com.otilm.core.service.writer.cbom.CryptoAssetWriter;
 import com.otilm.core.settings.SettingsCache;
 import com.otilm.core.tasks.CbomSyncTask;
 import com.otilm.core.util.BaseSpringBootTest;
@@ -152,6 +157,12 @@ class CbomServiceITest extends BaseSpringBootTest {
 
     @MockitoBean
     private AttributeEngine attributeEngine;
+
+    @Autowired
+    private CryptoAssetWriter cryptoAssetWriter;
+
+    @Autowired
+    private CryptoAssetSourceWriter cryptoAssetSourceWriter;
 
     @MockitoSpyBean
     private CbomRepository cbomRepositorySpy;
@@ -1790,9 +1801,13 @@ class CbomServiceITest extends BaseSpringBootTest {
     }
 
     /**
-     * A withdrawal that threw withdrew nothing, so the row still says what it said. Recording "a deletion withdrew this
-     * CBOM's cryptographic assets" for it would flip a genuinely SYNCED row to FAILED carrying a sentence that is not
-     * true of it -- and CBOM_ASSET_SYNC_ERROR now makes that sentence searchable.
+     * A withdrawal that threw before committing anything withdrew nothing, so the row still says what it said.
+     * Recording "a deletion withdrew this CBOM's cryptographic assets" for it would flip a genuinely SYNCED row to
+     * FAILED under a sentence untrue of it, and cost a re-ingest of a document nothing is wrong with.
+     *
+     * <p>
+     * The distinction is "withdrew nothing" and not "threw" -- see
+     * {@link #aWithdrawalThatEmptiedPartOfTheInventoryBeforeFailingLeavesTheRowOwingARebuild}.
      */
     @Test
     void testBulkDeleteCbom_withdrawalFailure_leavesTheRowsStateAlone() {
@@ -1845,6 +1860,10 @@ class CbomServiceITest extends BaseSpringBootTest {
         cbom.setVersion(1);
         cbom.setSpecVersion("1.6");
         cbom.setTimestamp(OffsetDateTime.now());
+        // SYNCED, because that is the state the record exists to overrule. A row still owing its first ingest has
+        // nothing to withdraw, and is left where it is -- pinned by
+        // aDeleteFailureLeavesARowThatOwesItsFirstIngestAlone.
+        cbom.setAssetSyncState(CbomAssetSyncState.SYNCED);
         cbom = cbomRepository.save(cbom);
         final UUID savedUuid = cbom.getUuid();
 
@@ -1903,7 +1922,7 @@ class CbomServiceITest extends BaseSpringBootTest {
         doThrow(new RuntimeException("DB delete error")).when(cbomRepositorySpy).delete(any(Cbom.class));
         doThrow(new RuntimeException("the connection was lost"))
                 .when(syncStateWriterSpy)
-                .markFailedEvenIfSynced(any(), any());
+                .markWithdrawnButNotDeleted(any());
 
         List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(first, second));
 
@@ -1913,6 +1932,156 @@ class CbomServiceITest extends BaseSpringBootTest {
         Assertions
                 .assertEquals(List.of(first.toString(), second.toString()),
                         messages.stream().map(BulkActionMessageDto::getUuid).toList());
+    }
+
+    /**
+     * A withdrawal that committed batches before failing did empty part of the inventory, so the row owes a rebuild.
+     *
+     * <p>
+     * Every batch commits in its own transaction. Left reading {@code SYNCED}, such a row claims a contribution that is
+     * partly deleted and sits on neither work list -- the backlog pass selects PENDING, the retry pass
+     * IN_PROGRESS/FAILED -- so nothing ever rebuilds it.
+     */
+    @Test
+    void aWithdrawalThatEmptiedPartOfTheInventoryBeforeFailingLeavesTheRowOwingARebuild() {
+        final UUID savedUuid = savedCbom("urn:uuid:partial-withdrawal");
+
+        doThrow(new CbomAssetDetachService.WithdrawalFailedException(
+                new CbomAssetDetachService.Withdrawal(100, 4, 0, false), new RuntimeException("deadlock victim")))
+                .when(detachServiceSpy)
+                .withdrawWaiting(savedUuid);
+
+        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(savedUuid));
+
+        Assertions.assertEquals(1, messages.size());
+        Cbom owing = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.FAILED, owing.getAssetSyncState());
+        Assertions.assertNotNull(owing.getAssetSyncError());
+    }
+
+    /**
+     * A CBOM that never ingested its assets has nothing to withdraw, so a failed deletion leaves it where it is.
+     *
+     * <p>
+     * Flipping PENDING to FAILED would move the row off the fast pending list onto the retry list -- a
+     * {@code cbom.sync.ingest-retry-after} window of delay -- under a sentence that is untrue of it: nothing was
+     * withdrawn.
+     */
+    @Test
+    void aDeleteFailureLeavesARowThatOwesItsFirstIngestAlone() {
+        Cbom cbom = new Cbom();
+        cbom.setSerialNumber("urn:uuid:never-ingested");
+        cbom.setVersion(1);
+        cbom.setSpecVersion("1.6");
+        final UUID savedUuid = cbomRepository.save(cbom).getUuid();
+        Assertions
+                .assertEquals(CbomAssetSyncState.PENDING,
+                        cbomRepository.findById(savedUuid).orElseThrow().getAssetSyncState());
+
+        doThrow(new RuntimeException("DB delete error")).when(cbomRepositorySpy).delete(any(Cbom.class));
+
+        cbomService.bulkDeleteCbom(List.of(savedUuid));
+
+        Cbom untouched = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.PENDING, untouched.getAssetSyncState());
+        Assertions.assertNull(untouched.getAssetSyncError());
+    }
+
+    /**
+     * Recording a withdrawal's failure is not an ingest attempt, so it must not restart the retry clock.
+     *
+     * <p>
+     * Every other write to this column stamps {@code asset_sync_attempted_at}, which is what the retry list reads to
+     * tell a live claim from an abandoned one. Stamped here, the row this write just put on the backlog would be
+     * excluded from it for a full retry window and then sorted behind every older candidate -- the row that most
+     * urgently owes a rebuild made to wait the longest.
+     */
+    @Test
+    void recordingAWithdrawnButUndeletedRowDoesNotRestartTheRetryClock() {
+        final UUID savedUuid = savedCbom("urn:uuid:attempt-clock");
+        Cbom stale = cbomRepository.findById(savedUuid).orElseThrow();
+        stale.setAssetSyncAttemptedAt(OffsetDateTime.now().minusHours(6));
+        cbomRepository.saveAndFlush(stale);
+        // Read back rather than remembered: PostgreSQL stores microseconds, and the comparison is about whether this
+        // write moved the clock, not about what the driver rounded.
+        final OffsetDateTime attemptedAt = cbomRepository.findById(savedUuid).orElseThrow().getAssetSyncAttemptedAt();
+
+        Assertions.assertEquals(1, syncStateWriter.markWithdrawnButNotDeleted(savedUuid));
+
+        Cbom recorded = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.FAILED, recorded.getAssetSyncState());
+        Assertions
+                .assertEquals(attemptedAt.toInstant(), recorded.getAssetSyncAttemptedAt().toInstant(),
+                        "the attempt clock belongs to ingest attempts, and this was not one");
+    }
+
+    /**
+     * An ingest that finishes just after a deletion withdrew the inventory must not write the row back to SYNCED.
+     *
+     * <p>
+     * Success is otherwise unconditional, and neither writer holds the asset-sync lock when it runs: a node between its
+     * last asset batch and its {@code markSynced} would put the row back to SYNCED with the error cleared -- the exact
+     * stranded state {@code markWithdrawnButNotDeleted} exists to prevent, and invisible to both work lists.
+     */
+    @Test
+    void anIngestFinishingAfterADeletionWithdrewTheInventoryCannotClaimTheRowIsSynced() {
+        final UUID savedUuid = savedCbom("urn:uuid:marksynced-race");
+        Assertions.assertEquals(1, syncStateWriter.markWithdrawnButNotDeleted(savedUuid));
+
+        Assertions
+                .assertEquals(0, syncStateWriter.markSynced(savedUuid, OffsetDateTime.now()),
+                        "the ingest's claim is stale: the inventory it synced has since been withdrawn");
+
+        Cbom stillOwing = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.FAILED, stillOwing.getAssetSyncState());
+        Assertions.assertNotNull(stillOwing.getAssetSyncError());
+
+        // And it is not a trap: the next backlog pass claims the row, which clears the error, and its ingest records
+        // success normally.
+        syncStateWriter.markInProgress(savedUuid);
+        Assertions.assertEquals(1, syncStateWriter.markSynced(savedUuid, OffsetDateTime.now()));
+        Assertions
+                .assertEquals(CbomAssetSyncState.SYNCED,
+                        cbomRepository.findById(savedUuid).orElseThrow().getAssetSyncState());
+    }
+
+    /**
+     * The bulk path against a real RESTRICT refusal: the translated sentence reaches the caller and the row stays.
+     *
+     * <p>
+     * Every other bulk test throws a synthetic {@code RuntimeException}, which exercises only the generic arm of
+     * {@code recordBulkDeleteFailure} and only the true direction of the carve-out that leaves the row SYNCED. Here the
+     * foreign key itself refuses, through the real writer and the real driver exception.
+     */
+    @Test
+    void aBulkDeleteTheInventoryRefusesIsTranslatedAndLeavesTheRowSynced() {
+        final UUID savedUuid = savedCbom("urn:uuid:bulk-restrict-refusal");
+        final UUID assetUuid = cryptoAssetWriter
+                .upsertIdentity(AssetRowKeys.forFields(anAlgorithm()), anAlgorithm(), null);
+        cryptoAssetSourceWriter
+                .upsertSource(assetUuid, savedUuid, Map.of("primitive", "signature"), List.of(), OffsetDateTime.now());
+        // The withdrawal is what the delete relies on to make the deletion possible. Suppressed, the source row
+        // survives into the header delete, which is how a real refusal is reached without a second node.
+        doReturn(new CbomAssetDetachService.Withdrawal(0, 0, 0, true))
+                .when(detachServiceSpy)
+                .withdrawWaiting(savedUuid);
+
+        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(savedUuid));
+
+        Assertions.assertEquals(1, messages.size());
+        assertTrue(messages.getFirst().getMessage().contains("still referenced by the cryptographic asset inventory"),
+                "the operator is told what refused it, in text this platform shaped");
+        assertFalse(messages.getFirst().getMessage().contains(savedUuid.toString()),
+                "the driver's DETAIL line quotes the failing row and must not reach the caller");
+
+        Cbom untouched = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.SYNCED, untouched.getAssetSyncState());
+        Assertions.assertNull(untouched.getAssetSyncError());
+    }
+
+    private static CryptoAssetIdentityFields anAlgorithm() {
+        return new CryptoAssetIdentityFields(CryptographicAssetType.ALGORITHM, "RSA", null, "rsa", "signature", "2048",
+                null, null, null, null);
     }
 
     private UUID savedCbom(String serialNumber) {

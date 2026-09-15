@@ -483,20 +483,32 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
     /**
      * An asset another CBOM still names outlives the deletion, with the deleted document's contribution gone from its
      * merged payload.
+     *
+     * <p>
+     * The deleted document is the one whose payload was elected, which is the case worth pinning: re-election has to
+     * happen for the survivor's payload to be served. The {@code crypto_asset_to_properties_source_key} foreign key is
+     * {@code ON DELETE SET NULL}, so a withdrawal that did not re-elect would leave the pointer null and the stale
+     * payload in place -- a row whose merged properties are a deleted document's, attributable to nothing.
      */
     @Test
     void anAssetAnotherCbomSourcesOutlivesTheDeletedOne() throws Exception {
         UUID assetUuid = upsert(rsa2048(), null);
-        sourceWriter
-                .upsertSource(assetUuid, leanCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
-                        OffsetDateTime.now());
-        sourceWriter
-                .upsertSource(assetUuid, richCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
-                        OffsetDateTime.now());
+        Map<String, Object> deleted = Map.of("primitive", "signature", "padding", "pkcs1v15", "parameterSet", "2048");
+        Map<String, Object> surviving = Map.of("primitive", "keyAgreement");
+        sourceWriter.upsertSource(assetUuid, leanCbom.getUuid(), deleted, List.of(), OffsetDateTime.now());
+        sourceWriter.upsertSource(assetUuid, richCbom.getUuid(), surviving, List.of(), OffsetDateTime.now());
+        assertThat(asset(assetUuid).getMergedCryptoProperties())
+                .describedAs("the richer payload is elected first, so the deletion has something to re-elect from")
+                .isEqualTo(deleted);
 
         cbomService.deleteCbom(leanCbom.getUuid());
 
-        assertThat(asset(assetUuid).getSourceCount()).isEqualTo(1);
+        CryptoAsset survivor = asset(assetUuid);
+        assertThat(survivor.getSourceCount()).isEqualTo(1);
+        assertThat(survivor.getMergedCryptoProperties()).isEqualTo(surviving);
+        assertThat(survivor.getPropertiesSourceUuid())
+                .describedAs("re-elected from what is left, not left pointing at nothing by the ON DELETE SET NULL")
+                .isEqualTo(source(assetUuid, richCbom.getUuid()).getUuid());
     }
 
     // ---- the alias table is invisible to identity ----
