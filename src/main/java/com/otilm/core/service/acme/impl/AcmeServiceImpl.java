@@ -147,7 +147,6 @@ public class AcmeServiceImpl implements AcmeExternalService {
     /** What createAcmeProfile stores when a profile does not name one. */
     private static final int DEFAULT_RETRY_INTERVAL = 36000;
 
-    /** How many refused identifiers are named before the rest are counted instead. */
     private static final int MAX_LISTED_IDENTIFIERS = 5;
 
     /** Longer than any DNS name or address literal, so a well-formed identifier is never the one that gets cut. */
