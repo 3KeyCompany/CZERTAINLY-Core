@@ -3,6 +3,8 @@ package com.otilm.core.service.writer.cbom;
 import com.otilm.api.model.core.cbom.CbomAssetSyncState;
 import com.otilm.core.dao.repository.CbomRepository;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +27,79 @@ public class CbomAssetSyncStateWriter {
         this.cbomRepository = cbomRepository;
     }
 
-    /** Claims the CBOM for an ingest attempt, clearing any error from the previous one. */
+    /**
+     * The states a failure may be written over: everything except {@code SYNCED}.
+     *
+     * <p>
+     * A run selects its work list, reads a document over HTTP, and only then writes. Another node can finish the same
+     * CBOM inside that window, and a failure written unconditionally would flip a genuinely synced row to FAILED with
+     * an error that is not about it. Success is unconditional in the other direction on purpose: the run that actually
+     * ingested the assets is the one entitled to say so.
+     */
+    private static final Set<CbomAssetSyncState> NOT_YET_SYNCED = EnumSet
+            .of(CbomAssetSyncState.PENDING, CbomAssetSyncState.IN_PROGRESS, CbomAssetSyncState.FAILED);
+
+    /**
+     * The stand-in for "never attempted", so neither side of the claim's comparison is a bare null.
+     *
+     * <p>
+     * PostgreSQL cannot infer the type of a null bind parameter in that position and the statement fails at the driver.
+     * No real attempt carries the epoch.
+     */
+    private static final OffsetDateTime NEVER_ATTEMPTED = OffsetDateTime.parse("1970-01-01T00:00:00Z");
+
+    /**
+     * Claims the CBOM for an ingest attempt, clearing any error from the previous one.
+     *
+     * <p>
+     * Guarded on {@link #NOT_YET_SYNCED} for the same reason {@link #markFailed} is, and it is not the same guard as
+     * {@link #claimForIngest}'s. The attempt timestamp is a retry window, never an ownership token: a run whose ingest
+     * outlives {@code cbom.sync.ingest-retry-after} loses its claim to another node without being told, and an
+     * unconditional write here would then walk a row that node has since finished back from {@code SYNCED} to
+     * {@code IN_PROGRESS}. What the two nodes write to {@code crypto_asset} still converges -- every write is an
+     * idempotent upsert, and the cluster lock admits one of them at a time -- so the state column is the only thing
+     * that needs guarding.
+     *
+     * @return 1 if the claim was written, 0 if the CBOM had been synced in the meantime
+     */
     @Transactional
     public int markInProgress(UUID cbomUuid) {
-        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.IN_PROGRESS, null, null);
+        return cbomRepository
+                .updateAssetSyncState(cbomUuid, CbomAssetSyncState.IN_PROGRESS, null, null, NOT_YET_SYNCED);
+    }
+
+    /**
+     * Claims a CBOM off the ingest work list, only if it is still as the caller read it.
+     *
+     * <p>
+     * For the backlog pass, which selects its list with a plain read and then spends an HTTP document read on each
+     * entry: this is what stops a second node from spending the same read. {@link #markInProgress} is the unconditional
+     * claim, for a caller that already holds the document and is entitled to ingest it.
+     *
+     * @return 1 when the caller may proceed, 0 when another node claimed the row first
+     */
+    @Transactional
+    public int claimForIngest(UUID cbomUuid, CbomAssetSyncState expectedState, OffsetDateTime expectedAttemptedAt) {
+        return cbomRepository
+                .claimAssetIngest(cbomUuid, CbomAssetSyncState.IN_PROGRESS, expectedState,
+                        expectedAttemptedAt == null ? NEVER_ATTEMPTED : expectedAttemptedAt, NEVER_ATTEMPTED);
+    }
+
+    /**
+     * Undoes a claim whose work never happened, putting the row back in the list it came from.
+     *
+     * <p>
+     * For the one case where the claim buys nothing: the CBOM repository answered no document read of the run at all,
+     * which is not a verdict on any document. See {@link #claimForIngest}.
+     */
+    @Transactional
+    public int releaseClaim(UUID cbomUuid, CbomAssetSyncState previousState) {
+        return cbomRepository.releaseAssetIngestClaim(cbomUuid, CbomAssetSyncState.IN_PROGRESS, previousState);
     }
 
     @Transactional
     public int markSynced(UUID cbomUuid, OffsetDateTime syncedAt) {
-        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.SYNCED, null, syncedAt);
+        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.SYNCED, null, syncedAt, null);
     }
 
     /**
@@ -50,9 +116,13 @@ public class CbomAssetSyncStateWriter {
      * driver or framework message must never be passed here: a constraint violation's {@code DETAIL} line carries the
      * failing row, and for {@code crypto_asset} that row carries the identity key. Use
      * {@code CryptoAssetConstraintTranslator} to derive a safe sentence from a database failure.
+     *
+     * @return 1 if the failure was recorded, 0 if the CBOM had been synced in the meantime -- see
+     * {@link #NOT_YET_SYNCED}
      */
     @Transactional
     public int markFailed(UUID cbomUuid, String operatorSafeError) {
-        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.FAILED, operatorSafeError, null);
+        return cbomRepository
+                .updateAssetSyncState(cbomUuid, CbomAssetSyncState.FAILED, operatorSafeError, null, NOT_YET_SYNCED);
     }
 }

@@ -157,12 +157,13 @@ class LocationsSearchITest extends BaseSpringBootTest {
         Assertions.assertEquals(2, responseDto.getLocations().size());
     }
 
+    /** The field advertises EQUALS over the instance names it publishes, never the suffix match. */
     @Test
     void testLocationByInstanceName() {
         final List<SearchFilterRequestDto> filters = new ArrayList<>();
         filters
-                .add(aPropertyFilter(FilterField.LOCATION_ENTITY_INSTANCE, FilterConditionOperator.ENDS_WITH,
-                        "instance-name-3"));
+                .add(aPropertyFilter(FilterField.LOCATION_ENTITY_INSTANCE, FilterConditionOperator.EQUALS,
+                        "test-instance-name-3"));
         final LocationsResponseDto responseDto = retrieveLocationsBySearch(filters);
         Assertions.assertEquals(1, responseDto.getLocations().size());
     }

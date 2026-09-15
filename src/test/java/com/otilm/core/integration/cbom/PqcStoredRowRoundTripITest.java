@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otilm.api.model.core.cryptoasset.PqcVerdict;
+import com.otilm.core.cbom.asset.CompositeCurve;
 import com.otilm.core.cbom.asset.CryptoAssetIdentityFields;
 import com.otilm.core.cbom.asset.identity.AssetNormalizer;
 import com.otilm.core.cbom.asset.identity.CryptoAssetIdentity;
@@ -83,6 +84,9 @@ class PqcStoredRowRoundTripITest extends BaseSpringBootTest {
         return Stream
                 .of(Arguments.of(algorithm("RSA-2048"), "CLASSICAL-SHOR"),
                         Arguments.of(algorithm("X25519-ML-KEM-768"), "PQC-HYBRID-PQC-STANDARDIZED"),
+                        // The only vector whose curve column holds more than one member, so the only one where the
+                        // array's element order, its mapping and the writer's split have to survive a round trip.
+                        Arguments.of(algorithm("X25519/X448"), "CLASSICAL-SHOR"),
                         Arguments.of(algorithm("X25519-ML-KEM-７６８"), "PQC-HYBRID-PQC-STANDARDIZED"),
                         Arguments.of(algorithm("AES-256-GCM"), "SYMMETRIC-READY"),
                         Arguments.of(algorithm("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"), "NAME-CIPHER-SUITE"),
@@ -192,8 +196,8 @@ class PqcStoredRowRoundTripITest extends BaseSpringBootTest {
 
     private static CryptoAssetIdentityFields storedFields(CryptoAsset row) {
         return new CryptoAssetIdentityFields(row.getAssetType(), row.getName(), row.getOid(), row.getAlgorithmFamily(),
-                row.getPrimitive(), row.getParameterSet(), row.getCurve(), row.getMode(), row.getPadding(),
-                row.getVariant());
+                row.getPrimitive(), row.getParameterSet(), CompositeCurve.join(row.getCurve()), row.getMode(),
+                row.getPadding(), row.getVariant());
     }
 
     private static CryptoAssetIdentityFields derivedFields(NormalizedAsset asset) {

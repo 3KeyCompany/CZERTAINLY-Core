@@ -369,6 +369,28 @@ public class FilterPredicatesBuilder {
         return from.get(singularAttribute);
     }
 
+    /**
+     * Refuses a condition the field does not advertise, before any predicate is built from it.
+     *
+     * <p>
+     * Applied to the column instead, an unadvertised condition succeeds or fails according to that column's SQL type,
+     * and the failure is a {@code DataAccessException} no handler translates -- a server fault rather than a rejected
+     * request. This is the floor for every listing; a field whose own branch below narrows the set further still does.
+     */
+    private static void requireAdvertisedCondition(final FilterField filterField,
+            final FilterConditionOperator condition) {
+        List<FilterConditionOperator> advertised = SearchHelper.availableConditions(filterField);
+        if (!advertised.contains(condition)) {
+            throw new ValidationException(ValidationError
+                    .create("Field %s does not support the %s condition; it supports %s."
+                            .formatted(filterField.name(), condition == null ? "missing" : condition.getCode(),
+                                    advertised
+                                            .stream()
+                                            .map(FilterConditionOperator::getCode)
+                                            .collect(Collectors.joining(", ")))));
+        }
+    }
+
     private static boolean isDeclaredOnStrictSubtypeOf(final From<?, ?> from, final Attribute<?, ?> fieldAttribute) {
         final Class<?> declaringType = fieldAttribute.getDeclaringType().getJavaType();
         return !declaringType.equals(from.getJavaType()) && from.getJavaType().isAssignableFrom(declaringType);
@@ -378,6 +400,7 @@ public class FilterPredicatesBuilder {
             final CommonAbstractCriteria query, final Root<T> root, SearchFilterRequestDto filterDto,
             Map<String, From> joinedAssociations, boolean refutedOidsOptedIn) {
         final FilterField filterField = FilterField.valueOf(filterDto.getFieldIdentifier());
+        requireAdvertisedCondition(filterField, filterDto.getCondition());
         From from = getJoinedAssociation(root, joinedAssociations, filterField, filterDto.getCondition());
 
         // prepare filter values, expression and set filter characteristics

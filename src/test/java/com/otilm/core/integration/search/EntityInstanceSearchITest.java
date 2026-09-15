@@ -154,10 +154,13 @@ class EntityInstanceSearchITest extends BaseSpringBootTest {
         Assertions.assertEquals(1, responseDto.getEntities().size());
     }
 
+    /** The field advertises EQUALS over the values it publishes, which takes several at once, and never CONTAINS. */
     @Test
     void testEntityByConnectorName() {
         final List<SearchFilterRequestDto> filters = new ArrayList<>();
-        filters.add(aPropertyFilter(FilterField.ENTITY_CONNECTOR_NAME, FilterConditionOperator.CONTAINS, "Connector"));
+        filters
+                .add(aPropertyFilter(FilterField.ENTITY_CONNECTOR_NAME, FilterConditionOperator.EQUALS,
+                        new ArrayList<>(List.of("testConnector1", "testConnector2", "testConnector3"))));
         final EntityInstanceResponseDto responseDto = retrieveTheEntitiesBySearch(filters);
         Assertions.assertEquals(3, responseDto.getEntities().size());
     }
@@ -165,7 +168,9 @@ class EntityInstanceSearchITest extends BaseSpringBootTest {
     @Test
     void testEntityByKind() {
         final List<SearchFilterRequestDto> filters = new ArrayList<>();
-        filters.add(aPropertyFilter(FilterField.ENTITY_KIND, FilterConditionOperator.CONTAINS, "test-kind"));
+        filters
+                .add(aPropertyFilter(FilterField.ENTITY_KIND, FilterConditionOperator.EQUALS,
+                        new ArrayList<>(List.of("test-kind1", "test-kind2"))));
         final EntityInstanceResponseDto responseDto = retrieveTheEntitiesBySearch(filters);
         Assertions.assertEquals(2, responseDto.getEntities().size());
     }

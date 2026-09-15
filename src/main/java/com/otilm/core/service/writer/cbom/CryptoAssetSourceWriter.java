@@ -43,8 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
  * source for one asset and then stamps a guard on another would hold a row lock while waiting for the advisory lock,
  * and a concurrent transaction doing the reverse would deadlock against it. <b>An ingest that may stamp a guard must
  * therefore take the advisory lock once, up front, before its first asset row lock</b> -- it is re-entrant within a
- * transaction, so acquiring it early costs a later acquisition nothing. That wiring belongs to the ingest ticket, which
- * is also what first makes the interleaving reachable: nothing composes these writers today.
+ * transaction, so acquiring it early costs a later acquisition nothing. {@code CbomAssetIngestService} is where that
+ * wiring lives, and a unit test asserts the order rather than leaving it to an intermittent deadlock.
  */
 @Service
 public class CryptoAssetSourceWriter {
@@ -76,13 +76,26 @@ public class CryptoAssetSourceWriter {
     @Transactional
     public void upsertSource(UUID assetUuid, UUID cbomUuid, Map<String, Object> cryptoProperties,
             List<Map<String, Object>> occurrences, OffsetDateTime seenAt) {
+        upsertSource(assetUuid, cbomUuid, cryptoProperties, occurrences, occurrenceCount(occurrences), seenAt);
+    }
+
+    /**
+     * Records what one CBOM says about one asset when the caller already knows how many occurrences the document
+     * reported, which is the shape extraction hands over: {@code CbomAssetExtractor} caps the evidence as it builds an
+     * asset, so the list reaching this method is already clipped and its size is no longer what the producer claimed.
+     * Deriving the count from it would erase exactly the gap {@code occurrence_count} exists to record.
+     *
+     * @param reportedOccurrences how many occurrences the CBOM reported, before any capping
+     */
+    @Transactional
+    public void upsertSource(UUID assetUuid, UUID cbomUuid, Map<String, Object> cryptoProperties,
+            List<Map<String, Object>> occurrences, int reportedOccurrences, OffsetDateTime seenAt) {
         assetRepository.lockForSourceChange(assetUuid);
         CryptoPropertiesDigest digest = CryptoPropertiesDigest.of(cryptoProperties);
         sourceRepository
                 .upsertSource(UUID.randomUUID(), assetUuid, cbomUuid, JsonColumnText.render(cryptoProperties),
                         digest.leafCount(), digest.hash(),
-                        JsonColumnText.render(OccurrenceEvidenceCapper.cap(occurrences)), occurrenceCount(occurrences),
-                        seenAt);
+                        JsonColumnText.render(OccurrenceEvidenceCapper.cap(occurrences)), reportedOccurrences, seenAt);
         assetRepository.recomputeMergeFromSources(assetUuid);
     }
 
@@ -101,11 +114,12 @@ public class CryptoAssetSourceWriter {
      * ratified which one applies.
      *
      * <p>
-     * <b>No production caller yet.</b> The delete path in {@code CbomServiceImpl} must call this for every asset a CBOM
-     * contributes to before deleting the row, because {@code crypto_asset_source_to_cbom_key} is RESTRICT. That wiring
-     * belongs to the ingest ticket, which is also what first makes it reachable: until something writes
-     * {@code crypto_asset_source}, every CBOM has zero sources and deletes unimpeded. It is not optional — without it
-     * the first CBOM to acquire a source cannot be deleted through the API at all.
+     * <b>No production caller yet, and that is now reachable.</b> The delete path in {@code CbomServiceImpl} must call
+     * this for every asset a CBOM contributes to before deleting the row, because
+     * {@code crypto_asset_source_to_cbom_key} is RESTRICT; until then a CBOM that has acquired a source cannot be
+     * deleted through the API at all. Ingest is what first writes those rows, so from core#2073 the exposure is live
+     * and {@code cbom.sync.asset-ingest-enabled} is what bounds it: turning ingest off stops any further CBOM acquiring
+     * sources, and is the operator's answer until the deletion lifecycle lands with the withdrawal and the tombstone.
      *
      * @return 1 if a source row was removed, 0 if there was none
      */
