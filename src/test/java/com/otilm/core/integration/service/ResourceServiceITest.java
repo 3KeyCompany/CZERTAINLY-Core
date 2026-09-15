@@ -354,10 +354,9 @@ class ResourceServiceITest extends BaseSpringBootTest {
 
     @Test
     void commentHostResourceOffersOnlyTheCommentableResources() throws NotFoundException {
-        Object[] offered = offeredValues(Resource.COMMENT, FilterField.COMMENT_HOST_RESOURCE);
-
-        assertThat(offered).containsExactlyInAnyOrder(Resource.getCommentableResources().toArray());
-        assertThat(offered).doesNotContain(Resource.NONE, Resource.ANY, Resource.COMMENT, Resource.CERTIFICATE_REQUEST);
+        assertThat(offeredValues(Resource.COMMENT, FilterField.COMMENT_HOST_RESOURCE))
+                .containsExactlyInAnyOrder(Resource.getCommentableResources().toArray())
+                .doesNotContain(Resource.NONE, Resource.ANY, Resource.COMMENT, Resource.CERTIFICATE_REQUEST);
     }
 
     @Test
