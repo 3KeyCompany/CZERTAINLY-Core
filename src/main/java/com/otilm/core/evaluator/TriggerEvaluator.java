@@ -263,8 +263,8 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
             throw new RuleException("Cannot get property " + fieldIdentifier + " from resource " + resource + ".");
         } catch (RuntimeException e) {
-            // A null link in a nested path throws unchecked, before any operator applies. Must not leave the
-            // class -- see the boundary catch below.
+            // An absent link resolves to an absent value; anything else unchecked during resolution must not leave
+            // the class -- see the boundary catch below.
             throw new RuleException("Cannot resolve property " + fieldIdentifier + " on resource " + resource
                     + "; the object does not hold the association the condition reads through.");
         }
@@ -343,10 +343,15 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
     }
 
     /**
-     * What a condition can say about a value the object does not have: it is absent and equals nothing, so only the
-     * presence operators and the equality pair have an answer; a comparison has nothing to compare and is not met.
-     * Reaching the operator lambdas with a null would fail inside them and be reported as a misconfigured condition,
-     * which it is not.
+     * The answer a condition gives for a value the object does not have.
+     *
+     * <p>
+     * <b>Null semantics:</b> an absent value is empty and equals nothing, so {@code EMPTY} and {@code NOT_EQUALS} are
+     * met and every other operator is not; a comparison has nothing to compare.
+     *
+     * <p>
+     * <b>Error boundary:</b> a null must never reach an operator lambda, which would fail inside it and be reported as
+     * a misconfigured condition.
      */
     private static boolean evaluateAbsentValue(FilterConditionOperator operator) {
         return operator == FilterConditionOperator.EMPTY || operator == FilterConditionOperator.NOT_EQUALS;
@@ -616,7 +621,18 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
     private Object getPropertyValue(Object object, List<Attribute> joinAttributes, Attribute fieldAttribute)
             throws InvocationTargetException, IllegalAccessException, NoSuchMethodException {
         String pathToProperty = FilterPredicatesBuilder.buildPathToProperty(joinAttributes, fieldAttribute);
-        return PropertyUtils.getProperty(object, pathToProperty);
+        if (pathToProperty.isEmpty()) {
+            return object;
+        }
+        // Walked one link at a time: an association the object does not hold leaves the property absent
+        Object current = object;
+        for (String link : pathToProperty.split("\\.")) {
+            if (current == null) {
+                return null;
+            }
+            current = PropertyUtils.getProperty(current, link);
+        }
+        return current;
     }
 
     private boolean getConditionEvaluationResult(ConditionItem conditionItem, T object, TriggerHistory triggerHistory,

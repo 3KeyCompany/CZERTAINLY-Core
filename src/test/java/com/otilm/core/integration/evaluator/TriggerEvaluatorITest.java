@@ -433,7 +433,6 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
         condition.setOperator(FilterConditionOperator.NOT_EMPTY);
         Assertions.assertFalse(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
 
-        // Once resolved, the same comparison is answered on the value
         comment.setResolvedAt(OffsetDateTime.now());
         condition.setOperator(FilterConditionOperator.GREATER);
         Assertions.assertTrue(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
@@ -471,6 +470,19 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
         condition.setValue(List.of("tst-group"));
         Assertions
                 .assertFalse(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+
+        // An association the object does not hold leaves the property absent too
+        certificate.setRaProfile(null);
+        condition.setFieldIdentifier(FilterField.RA_PROFILE_NAME.name());
+        condition.setOperator(FilterConditionOperator.EQUALS);
+        condition.setValue(List.of("tst-ra-profile"));
+        Assertions
+                .assertFalse(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+        condition.setOperator(FilterConditionOperator.NOT_EQUALS);
+        Assertions
+                .assertTrue(certificateTriggerEvaluator
                         .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
 
         // The same holds for any other field type without a value
@@ -681,11 +693,12 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
         condition.setFieldIdentifier(FilterField.COMMON_NAME.toString());
         condition.setFieldSource(FilterFieldSource.PROPERTY);
         condition.setOperator(FilterConditionOperator.GREATER);
-        Assertions
+        RuleException inapplicable = Assertions
                 .assertThrows(RuleException.class, () -> certificateTriggerEvaluator
                         .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+        Assertions.assertTrue(inapplicable.getMessage().contains("Common Name"), inapplicable.getMessage());
+        Assertions.assertTrue(inapplicable.getMessage().contains("greater than"), inapplicable.getMessage());
 
-        // An absent common name is simply not met; the earlier exception here came from dereferencing the null
         condition.setValue(123);
         condition.setOperator(FilterConditionOperator.CONTAINS);
         Assertions
