@@ -1,6 +1,7 @@
 package com.otilm.core.service.acme.identifier;
 
 import com.otilm.api.model.core.acme.AcmeIdentifierMatchType;
+import com.otilm.api.model.core.acme.AcmeIdentifierType;
 import com.otilm.api.model.core.acme.AcmePreauthorizedIdentifierDto;
 import com.otilm.api.model.core.acme.Identifier;
 import java.util.Arrays;
@@ -25,8 +26,6 @@ import java.util.regex.Pattern;
  */
 public final class AcmeIdentifierPolicy {
 
-    private static final String DNS = "dns";
-    private static final String IP = "ip";
     private static final String WILDCARD_PREFIX = "*.";
 
     /** A DNS label: letters, digits and inner hyphens, per the preferred name syntax of RFC 1035 section 2.3.1. */
@@ -50,19 +49,25 @@ public final class AcmeIdentifierPolicy {
      * entry: it is caller-supplied and a policy may hold many entries.
      */
     public static boolean covers(List<AcmePreauthorizedIdentifierDto> policy, Identifier identifier) {
-        if (policy == null || policy.isEmpty() || !isSupportedType(identifier) || identifier.getValue() == null) {
+        Optional<AcmeIdentifierType> ordered = orderedType(identifier);
+        if (policy == null || policy.isEmpty() || ordered.isEmpty() || identifier.getValue() == null) {
             return false;
         }
-        if (isIp(identifier)) {
-            Optional<byte[]> ordered = addressBytes(identifier.getValue());
-            return ordered.isPresent() && policy.stream().anyMatch(entry -> coversAddress(entry, ordered.get()));
+        if (ordered.get() == AcmeIdentifierType.IP) {
+            Optional<byte[]> address = addressBytes(identifier.getValue());
+            return address.isPresent() && policy.stream().anyMatch(entry -> coversAddress(entry, address.get()));
         }
-        String ordered = normalizeName(identifier.getValue());
-        return ordered != null && policy.stream().anyMatch(entry -> coversName(entry, ordered));
+        String name = normalizeName(identifier.getValue());
+        return name != null && policy.stream().anyMatch(entry -> coversName(entry, name));
     }
 
-    private static boolean usable(AcmePreauthorizedIdentifierDto entry) {
-        return entry != null && entry.getValue() != null && entry.getMatchType() != null;
+    /**
+     * Whether the entry can be matched at all, and whether it answers for this type of identifier. An entry covers its
+     * own type and no other: a dotted value listed as an address never pre-authorizes the DNS name that reads the same,
+     * and a name listed for DNS never pre-authorizes an address literal spelled like it.
+     */
+    private static boolean usable(AcmePreauthorizedIdentifierDto entry, AcmeIdentifierType ordered) {
+        return entry != null && entry.getValue() != null && entry.getMatchType() != null && entry.getType() == ordered;
     }
 
     /**
@@ -70,7 +75,7 @@ public final class AcmeIdentifierPolicy {
      * as literals.
      */
     private static boolean coversAddress(AcmePreauthorizedIdentifierDto entry, byte[] ordered) {
-        if (!usable(entry) || entry.getMatchType() != AcmeIdentifierMatchType.EXACT) {
+        if (!usable(entry, AcmeIdentifierType.IP) || entry.getMatchType() != AcmeIdentifierMatchType.EXACT) {
             return false;
         }
         Optional<byte[]> pattern = addressBytes(entry.getValue());
@@ -78,7 +83,7 @@ public final class AcmeIdentifierPolicy {
     }
 
     private static boolean coversName(AcmePreauthorizedIdentifierDto entry, String ordered) {
-        if (!usable(entry)) {
+        if (!usable(entry, AcmeIdentifierType.DNS)) {
             return false;
         }
         String pattern = normalizeName(entry.getValue());
@@ -108,10 +113,6 @@ public final class AcmeIdentifierPolicy {
     /** Below the name at any depth, and not the name itself: covering both takes two entries. */
     private static boolean isDescendantOf(String candidate, String ancestor) {
         return candidate.length() > ancestor.length() + 1 && candidate.endsWith("." + ancestor);
-    }
-
-    private static boolean isIp(Identifier identifier) {
-        return IP.equalsIgnoreCase(identifier.getType());
     }
 
     /**
@@ -152,7 +153,6 @@ public final class AcmeIdentifierPolicy {
         return true;
     }
 
-    /** The bytes of an IP literal, or empty when the value is not one. */
     private static Optional<byte[]> addressBytes(String value) {
         if (value.length() > MAX_ADDRESS_LENGTH) {
             return Optional.empty();
@@ -252,9 +252,25 @@ public final class AcmeIdentifierPolicy {
         return joined;
     }
 
-    /** Whether the type is one the platform pre-authorizes at all. Anything else is not covered. */
+    /**
+     * Whether the platform issues for this identifier type at all. ACME registers more of them than this - e-mail,
+     * TNAuthList, permanent-identifier - and an order naming one is refused rather than pre-authorized, so the
+     * enumeration of what a policy entry may declare is also the enumeration of what an order may ask for.
+     */
     public static boolean isSupportedType(Identifier identifier) {
-        return identifier != null
-                && (DNS.equalsIgnoreCase(identifier.getType()) || IP.equalsIgnoreCase(identifier.getType()));
+        return orderedType(identifier).isPresent();
+    }
+
+    /**
+     * The ordered type as the enumeration has it, or empty when the order names one the platform does not issue for.
+     */
+    private static Optional<AcmeIdentifierType> orderedType(Identifier identifier) {
+        if (identifier == null || identifier.getType() == null) {
+            return Optional.empty();
+        }
+        return Arrays
+                .stream(AcmeIdentifierType.values())
+                .filter(type -> type.getCode().equalsIgnoreCase(identifier.getType()))
+                .findFirst();
     }
 }

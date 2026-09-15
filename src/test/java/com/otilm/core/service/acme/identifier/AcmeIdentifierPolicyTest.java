@@ -1,6 +1,7 @@
 package com.otilm.core.service.acme.identifier;
 
 import com.otilm.api.model.core.acme.AcmeIdentifierMatchType;
+import com.otilm.api.model.core.acme.AcmeIdentifierType;
 import com.otilm.api.model.core.acme.AcmePreauthorizedIdentifierDto;
 import com.otilm.api.model.core.acme.Identifier;
 import java.util.List;
@@ -22,7 +23,8 @@ class AcmeIdentifierPolicyTest {
             AcmeIdentifierMatchType.SUBDOMAIN, true);
 
     /**
-     * The table from the issue, asserted as written so the documented behaviour and the code cannot drift.
+     * What each match type covers, asserted row by row so the behaviour a profile's editor sees and the matcher cannot
+     * drift apart.
      */
     @ParameterizedTest(name = "{0}: exact={1} subdomain={2} subdomain+wildcard={3}")
     @CsvSource({
@@ -80,29 +82,53 @@ class AcmeIdentifierPolicyTest {
 
     @Test
     void ipAddressesMatchByOctetsRegardlessOfRendering() {
-        AcmePreauthorizedIdentifierDto entry = entry("192.0.2.1", AcmeIdentifierMatchType.EXACT, false);
+        AcmePreauthorizedIdentifierDto entry = ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT);
 
         assertTrue(AcmeIdentifierPolicy.covers(List.of(entry), ip("192.0.2.1")));
         assertFalse(AcmeIdentifierPolicy.covers(List.of(entry), ip("192.0.2.2")));
         assertTrue(AcmeIdentifierPolicy
-                .covers(List.of(entry("2001:db8::1", AcmeIdentifierMatchType.EXACT, false)),
-                        ip("2001:0db8:0:0:0:0:0:1")),
+                .covers(List.of(ipEntry("2001:db8::1", AcmeIdentifierMatchType.EXACT)), ip("2001:0db8:0:0:0:0:0:1")),
                 "the same address written two ways is the same address");
+    }
+
+    /**
+     * A value alone does not say which kind of identifier it is, and several read as both. The entry's own type is what
+     * decides, so an operator who listed an address has not also listed the name spelled the same way.
+     */
+    @ParameterizedTest
+    @CsvSource({"192.0.2.1", "1.2.3.4", "0.0.0.0"})
+    void anEntryCoversItsOwnTypeAndNoOther(String value) {
+        assertTrue(AcmeIdentifierPolicy.covers(List.of(ipEntry(value, AcmeIdentifierMatchType.EXACT)), ip(value)));
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(ipEntry(value, AcmeIdentifierMatchType.EXACT)), dns(value)),
+                "an address entry must not pre-authorize the DNS name that reads the same");
+
+        assertTrue(
+                AcmeIdentifierPolicy.covers(List.of(entry(value, AcmeIdentifierMatchType.EXACT, false)), dns(value)));
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(entry(value, AcmeIdentifierMatchType.EXACT, false)), ip(value)),
+                "and a DNS entry must not pre-authorize the address");
+    }
+
+    @Test
+    void anEntryWithoutATypeCoversNothing() {
+        AcmePreauthorizedIdentifierDto untyped = entry(null, "server01.example.com", AcmeIdentifierMatchType.EXACT,
+                false);
+
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(untyped), dns("server01.example.com")));
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(untyped), ip("192.0.2.1")));
     }
 
     @Test
     void aSubdomainEntryNeverCoversAnIpIdentifier() {
         assertFalse(
                 AcmeIdentifierPolicy
-                        .covers(List.of(entry("192.0.2.1", AcmeIdentifierMatchType.SUBDOMAIN, false)), ip("192.0.2.1")),
+                        .covers(List.of(ipEntry("192.0.2.1", AcmeIdentifierMatchType.SUBDOMAIN)), ip("192.0.2.1")),
                 "an address has no hierarchy to descend");
     }
 
     /**
      * Resolving either side would let whoever controls DNS decide what a policy covers: an entry naming a host would
      * pre-authorize whatever address it resolves to, and an address entry would pre-authorize every name pointing at
-     * it. The values here start with characters a first-character test would wave through, which is how this went
-     * unnoticed once.
+     * it. The values start with characters that a first-character check would admit.
      */
     @ParameterizedTest
     @CsvSource({
@@ -115,8 +141,7 @@ class AcmeIdentifierPolicyTest {
         assertFalse(
                 AcmeIdentifierPolicy.covers(List.of(entry(name, AcmeIdentifierMatchType.EXACT, false)), ip(address)),
                 "a name entry must not cover an address");
-        assertFalse(
-                AcmeIdentifierPolicy.covers(List.of(entry(address, AcmeIdentifierMatchType.EXACT, false)), ip(name)),
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(ipEntry(address, AcmeIdentifierMatchType.EXACT)), ip(name)),
                 "an address entry must not cover a name presented as an ip identifier");
     }
 
@@ -136,10 +161,10 @@ class AcmeIdentifierPolicyTest {
             "foo%bar:1",
             "fe80::1%eth0"})
     void aColonDoesNotMakeAHostnameAnAddress(String value) {
-        assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry("192.0.2.1", AcmeIdentifierMatchType.EXACT, false)), ip(value)));
-        assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry(value, AcmeIdentifierMatchType.EXACT, false)), ip("192.0.2.1")));
+        assertFalse(
+                AcmeIdentifierPolicy.covers(List.of(ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT)), ip(value)));
+        assertFalse(
+                AcmeIdentifierPolicy.covers(List.of(ipEntry(value, AcmeIdentifierMatchType.EXACT)), ip("192.0.2.1")));
     }
 
     @ParameterizedTest
@@ -150,7 +175,7 @@ class AcmeIdentifierPolicyTest {
             "::ffff:192.0.2.1, 0:0:0:0:0:ffff:c000:0201",
             "2001:DB8::1, 2001:db8:0:0:0:0:0:1"})
     void anAddressWrittenTwoWaysIsTheSameAddress(String left, String right) {
-        assertTrue(AcmeIdentifierPolicy.covers(List.of(entry(left, AcmeIdentifierMatchType.EXACT, false)), ip(right)));
+        assertTrue(AcmeIdentifierPolicy.covers(List.of(ipEntry(left, AcmeIdentifierMatchType.EXACT)), ip(right)));
     }
 
     /**
@@ -175,13 +200,12 @@ class AcmeIdentifierPolicyTest {
             "1:2:3:4:5:1.2.3.4::",
             "1.2.3.4:5::6"})
     void aMalformedIpv6ValueIsNotAnAddress(String value) {
-        assertFalse(
-                AcmeIdentifierPolicy.covers(List.of(entry(value, AcmeIdentifierMatchType.EXACT, false)), ip(value)));
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(ipEntry(value, AcmeIdentifierMatchType.EXACT)), ip(value)));
     }
 
     /**
-     * The dotted quad is the address-final 32 bits. Accepting it earlier gave every entry a second spelling: the head
-     * of a compressed address rewritten as a quad parses to the same bytes.
+     * The dotted quad is the address-final 32 bits. Allowing one before the elision gives an entry an alias, because
+     * the rewritten head parses to the same bytes.
      */
     @ParameterizedTest
     @CsvSource({
@@ -191,15 +215,14 @@ class AcmeIdentifierPolicyTest {
             "2001:db8:abcd:ef01::9, 2001:db8:171.205.239.1::9"})
     void aQuadBeforeTheElisionIsNotAnAliasForAnEntry(String entryValue, String orderedValue) {
         assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry(entryValue, AcmeIdentifierMatchType.EXACT, false)), ip(orderedValue)));
+                .covers(List.of(ipEntry(entryValue, AcmeIdentifierMatchType.EXACT)), ip(orderedValue)));
     }
 
     @Test
     void anAddressValueLongerThanAnyLiteralIsRefusedBeforeParsing() {
         String oversized = "1:".repeat(5000) + "1";
 
-        assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry("::1", AcmeIdentifierMatchType.EXACT, false)), ip(oversized)));
+        assertFalse(AcmeIdentifierPolicy.covers(List.of(ipEntry("::1", AcmeIdentifierMatchType.EXACT)), ip(oversized)));
     }
 
     @Test
@@ -227,12 +250,12 @@ class AcmeIdentifierPolicyTest {
     @Test
     void anIpIdentifierWhoseValueIsNotALiteralIsNotCovered() {
         assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry("192.0.2.1", AcmeIdentifierMatchType.EXACT, false)), ip("localhost")));
+                .covers(List.of(ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT)), ip("localhost")));
         assertFalse(AcmeIdentifierPolicy
-                .covers(List.of(entry("192.0.2.1", AcmeIdentifierMatchType.EXACT, false)), ip("999.0.2.1")));
+                .covers(List.of(ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT)), ip("999.0.2.1")));
         assertFalse(
                 AcmeIdentifierPolicy
-                        .covers(List.of(entry("192.0.2.1", AcmeIdentifierMatchType.EXACT, false)), ip("010.0.0.1")),
+                        .covers(List.of(ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT)), ip("010.0.0.1")),
                 "a leading zero reads as octal to some parsers and decimal to others");
     }
 
@@ -292,7 +315,12 @@ class AcmeIdentifierPolicyTest {
     void onlyDnsAndIpAreTypesThePolicyKnows() {
         assertTrue(AcmeIdentifierPolicy.isSupportedType(dns("server01.example.com")));
         assertTrue(AcmeIdentifierPolicy.isSupportedType(ip("192.0.2.1")));
+        assertTrue(AcmeIdentifierPolicy.isSupportedType(identifier("DNS", "server01.example.com")),
+                "the type is compared case-insensitively, as RFC 8555 writes it lowercase but does not require it");
+        // The other types ACME registers, none of which the platform issues for.
         assertFalse(AcmeIdentifierPolicy.isSupportedType(identifier("email", "someone@example.com")));
+        assertFalse(AcmeIdentifierPolicy.isSupportedType(identifier("TNAuthList", "eyJhbGciOiJF")));
+        assertFalse(AcmeIdentifierPolicy.isSupportedType(identifier("permanent-identifier", "device-1")));
         assertFalse(AcmeIdentifierPolicy.isSupportedType(identifier(null, "server01.example.com")));
         assertFalse(AcmeIdentifierPolicy.isSupportedType(null));
     }
@@ -314,7 +342,17 @@ class AcmeIdentifierPolicyTest {
 
     private static AcmePreauthorizedIdentifierDto entry(String value, AcmeIdentifierMatchType matchType,
             boolean allowWildcard) {
+        return entry(AcmeIdentifierType.DNS, value, matchType, allowWildcard);
+    }
+
+    private static AcmePreauthorizedIdentifierDto ipEntry(String value, AcmeIdentifierMatchType matchType) {
+        return entry(AcmeIdentifierType.IP, value, matchType, false);
+    }
+
+    private static AcmePreauthorizedIdentifierDto entry(AcmeIdentifierType type, String value,
+            AcmeIdentifierMatchType matchType, boolean allowWildcard) {
         AcmePreauthorizedIdentifierDto entry = new AcmePreauthorizedIdentifierDto();
+        entry.setType(type);
         entry.setValue(value);
         entry.setMatchType(matchType);
         entry.setAllowWildcard(allowWildcard);

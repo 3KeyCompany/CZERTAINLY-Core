@@ -19,6 +19,7 @@ import com.otilm.api.model.common.attribute.v3.content.StringAttributeContentV3;
 import com.otilm.api.model.core.acme.AccountStatus;
 import com.otilm.api.model.core.acme.AcmeIdentifierAuthorizationMode;
 import com.otilm.api.model.core.acme.AcmeIdentifierMatchType;
+import com.otilm.api.model.core.acme.AcmeIdentifierType;
 import com.otilm.api.model.core.acme.AcmePreauthorizedIdentifierDto;
 import com.otilm.api.model.core.acme.AcmeProfileDto;
 import com.otilm.api.model.core.acme.AcmeProfileListDto;
@@ -406,6 +407,7 @@ class AcmeProfileServiceITest extends BaseSpringBootTest {
 
     private static AcmePreauthorizedIdentifierDto entry(String value) {
         AcmePreauthorizedIdentifierDto entry = new AcmePreauthorizedIdentifierDto();
+        entry.setType(AcmeIdentifierType.DNS);
         entry.setValue(value);
         entry.setMatchType(AcmeIdentifierMatchType.SUBDOMAIN);
         return entry;

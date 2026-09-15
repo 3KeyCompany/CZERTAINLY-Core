@@ -6,6 +6,7 @@ import com.otilm.api.model.client.connector.v2.ConnectorVersion;
 import com.otilm.api.model.core.acme.Account;
 import com.otilm.api.model.core.acme.AcmeIdentifierAuthorizationMode;
 import com.otilm.api.model.core.acme.AcmeIdentifierMatchType;
+import com.otilm.api.model.core.acme.AcmeIdentifierType;
 import com.otilm.api.model.core.acme.AcmePreauthorizedIdentifierDto;
 import com.otilm.api.model.core.acme.AuthorizationStatus;
 import com.otilm.api.model.core.acme.Order;
@@ -281,6 +282,7 @@ class AcmePreauthorizedOrderITest extends BaseSpringBootTest {
     private static AcmePreauthorizedIdentifierDto entry(String value, AcmeIdentifierMatchType matchType,
             boolean allowWildcard) {
         AcmePreauthorizedIdentifierDto entry = new AcmePreauthorizedIdentifierDto();
+        entry.setType(AcmeIdentifierType.DNS);
         entry.setValue(value);
         entry.setMatchType(matchType);
         entry.setAllowWildcard(allowWildcard);
