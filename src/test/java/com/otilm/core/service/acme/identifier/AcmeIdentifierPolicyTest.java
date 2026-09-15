@@ -108,6 +108,50 @@ class AcmeIdentifierPolicyTest {
                 "and a DNS entry must not pre-authorize the address");
     }
 
+    /**
+     * An entry that cannot cover anything is refused when the profile is written, so the policy never holds one. Each
+     * of these reads like cover and provides none.
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "dns, *.apps.example.com,  subdomain, false, a wildcard where a name belongs",
+            "dns, *.apps.example.com,  exact,     false, the same as an exact entry",
+            "dns, '..apps.example.com', subdomain, false, not a well-formed name",
+            "dns, 'ban\u212Ak.example.com', exact, false, not ASCII",
+            "ip,  192.0.2.1,           subdomain, false, an address cannot be descended",
+            "ip,  192.0.2.1,           exact,     true,  an address has no wildcard form",
+            "ip,  999.0.2.1,           exact,     false, not an address literal",
+            "ip,  010.0.0.1,           exact,     false, a leading zero is refused rather than interpreted",
+            "ip,  localhost,           exact,     false, a name is never resolved to an address"})
+    void anEntryThatCouldNeverMatchIsNotUsable(String type, String value, String matchType, boolean allowWildcard,
+            String why) {
+        AcmePreauthorizedIdentifierDto entry = entry(AcmeIdentifierType.findByCode(type), value,
+                AcmeIdentifierMatchType.findByCode(matchType), allowWildcard);
+
+        assertFalse(AcmeIdentifierPolicy.isUsable(entry), why);
+    }
+
+    @Test
+    void anEntryThatCanMatchIsUsable() {
+        assertTrue(AcmeIdentifierPolicy.isUsable(SUBDOMAIN_APPS));
+        assertTrue(AcmeIdentifierPolicy.isUsable(SUBDOMAIN_APPS_WILDCARD));
+        assertTrue(AcmeIdentifierPolicy.isUsable(EXACT_SERVER));
+        assertTrue(AcmeIdentifierPolicy.isUsable(entry("apps.example.com.", AcmeIdentifierMatchType.SUBDOMAIN, false)),
+                "a trailing root dot names the same host");
+        assertTrue(AcmeIdentifierPolicy.isUsable(ipEntry("192.0.2.1", AcmeIdentifierMatchType.EXACT)));
+        assertTrue(AcmeIdentifierPolicy.isUsable(ipEntry("2001:db8::1", AcmeIdentifierMatchType.EXACT)));
+    }
+
+    @Test
+    void anIncompleteEntryIsNotUsable() {
+        assertFalse(AcmeIdentifierPolicy.isUsable(null));
+        assertFalse(
+                AcmeIdentifierPolicy.isUsable(entry(null, "apps.example.com", AcmeIdentifierMatchType.EXACT, false)));
+        assertFalse(AcmeIdentifierPolicy
+                .isUsable(entry(AcmeIdentifierType.DNS, null, AcmeIdentifierMatchType.EXACT, false)));
+        assertFalse(AcmeIdentifierPolicy.isUsable(entry(AcmeIdentifierType.DNS, "apps.example.com", null, false)));
+    }
+
     @Test
     void anEntryWithoutATypeCoversNothing() {
         AcmePreauthorizedIdentifierDto untyped = entry(null, "server01.example.com", AcmeIdentifierMatchType.EXACT,

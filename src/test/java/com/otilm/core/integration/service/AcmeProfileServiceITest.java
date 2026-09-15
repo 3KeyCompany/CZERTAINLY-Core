@@ -326,6 +326,46 @@ class AcmeProfileServiceITest extends BaseSpringBootTest {
     }
 
     @Test
+    void anEntryThatCouldNeverMatchIsRefusedOnCreateAndOnEdit() throws Exception {
+        // Otherwise it sits in the policy looking like cover, and counts toward the preauthorizedOnly guard while
+        // pre-authorizing nothing.
+        AcmePreauthorizedIdentifierDto wildcardValue = entry("*.apps.example.com");
+        AcmeProfileRequestDto create = new AcmeProfileRequestDto();
+        create.setName("unusablePolicy");
+        create.setPreauthorizedIdentifiers(List.of(wildcardValue));
+
+        ValidationException onCreate = Assertions
+                .assertThrows(ValidationException.class, () -> acmeProfileService.createAcmeProfile(create));
+        Assertions.assertTrue(onCreate.getMessage().contains("*.apps.example.com"), "the entry is named back");
+
+        AcmeProfileEditRequestDto edit = new AcmeProfileEditRequestDto();
+        edit.setPreauthorizedIdentifiers(List.of(wildcardValue));
+        SecuredUUID acmeProfileUuid = acmeProfile.getSecuredUuid();
+
+        Assertions
+                .assertThrows(ValidationException.class,
+                        () -> acmeProfileService.editAcmeProfile(acmeProfileUuid, edit));
+        Assertions
+                .assertTrue(acmeProfileRepository
+                        .findByUuid(acmeProfile.getUuid())
+                        .orElseThrow()
+                        .preauthorizedIdentifierList()
+                        .isEmpty(), "a refused edit stores nothing");
+    }
+
+    @Test
+    void aPolicyOfOnlyUnusableEntriesCannotSatisfyPreauthorizedOnly() throws Exception {
+        // The guard counts entries; without the usability check a list of these would pass it and then refuse
+        // every order the profile could receive.
+        AcmeProfileRequestDto create = new AcmeProfileRequestDto();
+        create.setName("unusableOnlyPolicy");
+        create.setIdentifierAuthorizationMode(AcmeIdentifierAuthorizationMode.PREAUTHORIZED_ONLY);
+        create.setPreauthorizedIdentifiers(List.of(entry("*.apps.example.com")));
+
+        Assertions.assertThrows(ValidationException.class, () -> acmeProfileService.createAcmeProfile(create));
+    }
+
+    @Test
     void preauthorizedOnlyWithAnEmptyPolicyIsRefusedOnCreate() {
         AcmeProfileRequestDto request = new AcmeProfileRequestDto();
         request.setName("emptyOnlyPolicy");

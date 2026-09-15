@@ -62,6 +62,25 @@ public final class AcmeIdentifierPolicy {
     }
 
     /**
+     * Whether an entry can ever cover anything at all. Checked when a profile is written rather than when an order
+     * arrives, because an entry that covers nothing is indistinguishable in the policy from one that covers something:
+     * it reads as cover the operator does not have. Under PREAUTHORIZED_ONLY a policy made only of such entries would
+     * also satisfy the non-empty guard and then refuse every order the profile could receive.
+     */
+    public static boolean isUsable(AcmePreauthorizedIdentifierDto entry) {
+        if (entry == null || entry.getValue() == null || entry.getMatchType() == null || entry.getType() == null) {
+            return false;
+        }
+        if (entry.getType() == AcmeIdentifierType.IP) {
+            return entry.getMatchType() == AcmeIdentifierMatchType.EXACT && !entry.isAllowWildcard()
+                    && addressBytes(entry.getValue()).isPresent();
+        }
+        String name = normalizeName(entry.getValue());
+        // An entry is a name, never a pattern: the match type is what widens it, so a wildcard value covers nothing.
+        return name != null && !name.startsWith(WILDCARD_PREFIX);
+    }
+
+    /**
      * Whether the entry can be matched at all, and whether it answers for this type of identifier. An entry covers its
      * own type and no other: a dotted value listed as an address never pre-authorizes the DNS name that reads the same,
      * and a name listed for DNS never pre-authorizes an address literal spelled like it.
