@@ -211,7 +211,7 @@ class KeyProviderV2AdapterTest {
     }
 
     @Test
-    void destroyKey_propagatesConnectorFailure_forDeactivatedToken() throws Exception {
+    void destroyKey_toleratesConnectorFailure_forDeactivatedToken() throws Exception {
         // given
         RemoteKeyReference reference = new RemoteKeyReference.MetadataReference(metadata("offline-key-handle"));
         ImmutableCryptographicKeyFullModel key = keyWithTokenStatus(TokenInstanceStatus.DEACTIVATED);
@@ -222,24 +222,40 @@ class KeyProviderV2AdapterTest {
         Executable destroy = () -> adapter.destroyKeyItem(key, reference);
 
         // then
-        assertSame(failure, assertThrows(ConnectorException.class, destroy));
+        assertDoesNotThrow(destroy);
         verify(client).destroyKey(any(), any());
     }
 
-    @Test
-    void destroyKey_rejectsUnconfirmedCompletion_forDeactivatedToken() throws Exception {
+    @ParameterizedTest
+    @MethodSource("incompleteDestructionResponses")
+    void destroyKey_toleratesUnconfirmedCompletion_forDeactivatedToken(
+            ResponseEntity<KeyOperationResponseV2Dto> response) throws Exception {
         // given
         RemoteKeyReference reference = new RemoteKeyReference.MetadataReference(metadata("offline-key-handle"));
         ImmutableCryptographicKeyFullModel key = keyWithTokenStatus(TokenInstanceStatus.DEACTIVATED);
-        when(client.destroyKey(any(), any()))
-                .thenReturn(ResponseEntity.accepted().body(new KeyOperationResponseV2Dto()));
+        when(client.destroyKey(any(), any())).thenReturn(response);
 
         // when
         Executable destroy = () -> adapter.destroyKeyItem(key, reference);
 
         // then
-        ConnectorException failure = assertThrows(ConnectorException.class, destroy);
-        assertEquals("Connector did not confirm synchronous key destruction.", failure.getMessage());
+        assertDoesNotThrow(destroy);
+        verify(client).destroyKey(any(), any());
+    }
+
+    @Test
+    void destroyKey_propagatesRuntimeFailure_forDeactivatedToken() throws Exception {
+        // given
+        RemoteKeyReference reference = new RemoteKeyReference.MetadataReference(metadata("offline-key-handle"));
+        ImmutableCryptographicKeyFullModel key = keyWithTokenStatus(TokenInstanceStatus.DEACTIVATED);
+        RuntimeException failure = new IllegalStateException("Unexpected connector client failure");
+        when(client.destroyKey(any(), any())).thenThrow(failure);
+
+        // when
+        Executable destroy = () -> adapter.destroyKeyItem(key, reference);
+
+        // then
+        assertSame(failure, assertThrows(IllegalStateException.class, destroy));
     }
 
     private static RequestAttribute requestAttribute(String name) {

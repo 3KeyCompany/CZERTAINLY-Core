@@ -11,6 +11,7 @@ import com.otilm.api.model.common.attribute.common.MetadataAttribute;
 import com.otilm.api.model.common.enums.cryptography.KeyFormat;
 import com.otilm.api.model.common.enums.cryptography.KeyType;
 import com.otilm.api.model.connector.common.v2.OperationExecutionMode;
+import com.otilm.api.model.connector.cryptography.enums.TokenInstanceStatus;
 import com.otilm.api.model.connector.cryptography.v2.TokenProfileScopedRequestV2Dto;
 import com.otilm.api.model.connector.cryptography.v2.key.CreateKeyAttributesRequestV2Dto;
 import com.otilm.api.model.connector.cryptography.v2.key.CreateKeyRequestV2Dto;
@@ -93,6 +94,14 @@ public class KeyProviderV2Adapter implements KeyProviderAdapter {
             }
         } catch (ConnectorEntityNotFoundException e) {
             log.info("Key item was not found on the remote token; treating destruction as successful");
+        } catch (ConnectorException e) {
+            if (TokenInstanceStatus.DEACTIVATED.equals(cryptographicKey.tokenInstance().status())) {
+                log
+                        .warn("Key item destruction failed; allowing local cleanup because Token '{}' is DEACTIVATED.",
+                                cryptographicKey.tokenInstance().name());
+            } else {
+                throw e;
+            }
         }
     }
 
