@@ -2,8 +2,10 @@ package com.otilm.core.cbom.ingest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.otilm.core.cbom.asset.CompositeCurve;
+import com.otilm.api.exception.ValidationException;
+import com.otilm.api.model.core.cbom.CbomAssetSyncState;
 import com.otilm.core.cbom.asset.CryptoAssetIdentityFields;
+import com.otilm.core.cbom.asset.CryptoPropertiesDigest;
 import com.otilm.core.cbom.asset.identity.CbomAssetExtractor;
 import com.otilm.core.cbom.pqc.PqcDecision;
 import com.otilm.core.cbom.pqc.PqcEvaluator;
@@ -11,16 +13,20 @@ import com.otilm.core.cbom.pqc.PqcRuleset;
 import com.otilm.core.cluster.ClusterOperationSynchronizer;
 import com.otilm.core.config.CbomSyncProperties;
 import com.otilm.core.dao.CryptoAssetConstraintTranslator;
-import com.otilm.core.dao.entity.cbom.CryptoAsset;
+import com.otilm.core.dao.repository.CbomRepository;
 import com.otilm.core.dao.repository.cbom.CryptoAssetRepository;
 import com.otilm.core.events.transaction.TransactionHandler;
+import com.otilm.core.model.cbom.PqcStaleVerdictRow;
 import com.otilm.core.serialization.ObjectMapperFactory;
 import com.otilm.core.service.writer.cbom.CbomAssetSyncStateWriter;
 import com.otilm.core.service.writer.cbom.CryptoAssetAliasWriter;
 import com.otilm.core.service.writer.cbom.CryptoAssetSourceWriter;
 import com.otilm.core.service.writer.cbom.CryptoAssetWriter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,16 +56,21 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link CbomAssetSyncStateWriter} is {@code REQUIRED} and would otherwise enrol the state in the very transaction that
  * is failing -- the failure would then roll back the record of itself, and the operator would see a CBOM that looks
  * untouched.</li>
- * <li>Each batch of asset writes runs in its own transaction and takes
- * {@link ClusterOperationSynchronizer.Operation#CBOM_ASSET_SYNC} inside it. That lock is transaction-scoped, so it is
- * released at every batch commit rather than held across the document: a second node can take it in the gap, and the
- * first node then abandons the rest of the document at its next batch. Safe, because every write is an idempotent
- * upsert and the CBOM goes on owing an ingest -- but it is why a batch is bounded by {@code cbom.sync.asset-batch-size}
- * rather than by the document.</li>
+ * <li>Each batch of asset writes runs in its own transaction and takes {@link #assetSyncLockKey(UUID) this CBOM's
+ * asset-sync lock} inside it. That lock is transaction-scoped, so it is released at every batch commit rather than held
+ * across the document: a second node can take it in the gap, and the first node then abandons the rest of the document
+ * at its next batch. Safe, because every write is an idempotent upsert and the CBOM goes on owing an ingest -- but it
+ * is why a batch is bounded by {@code cbom.sync.asset-batch-size} rather than by the document.</li>
  * <li>Inside a batch, {@link CryptoAssetAliasWriter#ALIAS_DECISION_LOCK} is taken <b>before the first asset row
  * lock</b>. That lock outranks every {@code crypto_asset} row lock, so a transaction that upserts a source first and
  * stamps a guard second would deadlock against one doing the reverse.</li>
  * </ul>
+ *
+ * <p>
+ * <b>Lock ranking, third rank included.</b> The asset-sync lock is taken above {@code ALIAS_DECISION_LOCK}, which is
+ * above every {@code crypto_asset} row lock. The asset-sync lock is only ever acquired with a non-blocking
+ * {@code tryLock}, so a node that cannot get it abandons the batch rather than joining a wait chain; acquiring it with
+ * a blocking call would close a cycle against any path that takes the two in the other order.
  */
 @Slf4j
 @Service
@@ -72,38 +83,63 @@ public class CbomAssetIngestService {
     private final CryptoAssetWriter assetWriter;
     private final CryptoAssetSourceWriter sourceWriter;
     private final CbomAssetSyncStateWriter stateWriter;
+    private final CbomRepository cbomRepository;
     private final CryptoAssetRepository assetRepository;
     private final PqcEvaluator evaluator;
     private final ClusterOperationSynchronizer clusterSynchronizer;
     private final TransactionHandler transactionHandler;
+    private final MeterRegistry meterRegistry;
+    private final boolean enabled;
     private final int batchSize;
 
     public CbomAssetIngestService(CbomAssetExtractor extractor, CryptoAssetWriter assetWriter,
-            CryptoAssetSourceWriter sourceWriter, CbomAssetSyncStateWriter stateWriter,
+            CryptoAssetSourceWriter sourceWriter, CbomAssetSyncStateWriter stateWriter, CbomRepository cbomRepository,
             CryptoAssetRepository assetRepository, PqcEvaluator evaluator,
             ClusterOperationSynchronizer clusterSynchronizer, TransactionHandler transactionHandler,
-            CbomSyncProperties properties) {
+            MeterRegistry meterRegistry, CbomSyncProperties properties) {
         this.extractor = extractor;
         this.assetWriter = assetWriter;
         this.sourceWriter = sourceWriter;
         this.stateWriter = stateWriter;
+        this.cbomRepository = cbomRepository;
         this.assetRepository = assetRepository;
         this.evaluator = evaluator;
         this.clusterSynchronizer = clusterSynchronizer;
         this.transactionHandler = transactionHandler;
+        this.meterRegistry = meterRegistry;
+        this.enabled = properties.assetIngestEnabled();
         this.batchSize = properties.assetBatchSize();
+    }
+
+    /**
+     * The cluster lock this CBOM's asset writes take, one key per document.
+     *
+     * <p>
+     * Per document rather than one key for the operation, because the backlog pass claims a row before it reads the
+     * document and a single key would undo that: a node that lost a global lock would have spent the HTTP read and the
+     * extraction already, and the cluster would write at one node's rate however many nodes it has. Two nodes working
+     * different documents do not contend; two working the same one are what this excludes, which is the case the claim
+     * cannot cover on its own -- the inline pass does not claim, and a claim can expire under a long ingest.
+     */
+    public static String assetSyncLockKey(UUID cbomUuid) {
+        return "cbom-asset-sync:" + cbomUuid;
     }
 
     /** What one document's ingest did, for the run report. */
     public enum IngestOutcome {
         /** Every asset the document yielded is stored and the CBOM reads {@code SYNCED}. */
         INGESTED,
-        /** Another node holds the cluster lock; the CBOM is left for a later run, still owing an ingest. */
+        /** Another node is ingesting this CBOM; it is left as the run found it, still owing an ingest. */
         LOCKED_ELSEWHERE,
         /** The document was refused before anything was written; the CBOM reads {@code FAILED} with the reason. */
         REFUSED,
         /** Writing failed partway; the CBOM reads {@code FAILED} and the next run redoes the unit. */
-        FAILED
+        FAILED,
+        /**
+         * {@code cbom.sync.asset-ingest-enabled} is off. Nothing was read and nothing was written, and the CBOM is left
+         * exactly as it was found -- so turning the switch back on resumes rather than repairs.
+         */
+        DISABLED
     }
 
     /**
@@ -123,6 +159,15 @@ public class CbomAssetIngestService {
     /** As {@link #ingest(UUID, Map, OffsetDateTime)}, for a document already parsed into a tree. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public IngestOutcome ingest(UUID cbomUuid, JsonNode document, OffsetDateTime seenAt) {
+        // The authoritative half of the kill switch. Its callers check it too, so that a disabled run does not select
+        // a work list or spend a document read; this is what makes "nothing is written" true of every caller, present
+        // and future, rather than of the two that remember to ask.
+        if (!enabled) {
+            return IngestOutcome.DISABLED;
+        }
+        // Captured before the claim overwrites it, so a batch that finds the lock taken can put the row back in the
+        // list it came from rather than leaving it IN_PROGRESS for work no node is doing.
+        final CbomAssetSyncState entryState = cbomRepository.findAssetSyncState(cbomUuid).orElse(null);
         runInOwnTransaction(() -> stateWriter.markInProgress(cbomUuid));
 
         final CbomAssetExtractor.Extraction extraction;
@@ -141,12 +186,14 @@ public class CbomAssetIngestService {
                     "the document's cross-component scope could not be built, so its assets cannot be keyed safely");
         }
 
+        final List<CbomAssetExtractor.ExtractedAsset> assets = CbomAssetExtractor.ExtractedAsset
+                .coalesceByIdentity(extraction.assets(), CbomAssetIngestService::leafCountOf);
         try {
-            for (List<CbomAssetExtractor.ExtractedAsset> batch : batches(extraction.assets())) {
+            for (List<CbomAssetExtractor.ExtractedAsset> batch : batches(assets)) {
                 final boolean locked = transactionHandler
                         .runInNewTransaction(() -> writeBatchUnderClusterLock(cbomUuid, batch, seenAt));
                 if (!locked) {
-                    return IngestOutcome.LOCKED_ELSEWHERE;
+                    return lockedElsewhere(cbomUuid, entryState);
                 }
             }
         } catch (RuntimeException e) {
@@ -156,28 +203,53 @@ public class CbomAssetIngestService {
 
         runInOwnTransaction(() -> stateWriter.markSynced(cbomUuid, seenAt));
         log
-                .debug("CBOM asset ingest: CBOM {} ingested {} assets, {} components skipped", cbomUuid,
-                        extraction.assetCount(), extraction.skips().size());
+                .debug("CBOM asset ingest: CBOM {} ingested {} assets, {} components skipped", cbomUuid, assets.size(),
+                        extraction.skips().size());
         return IngestOutcome.INGESTED;
     }
 
     /**
-     * One batch, inside the transaction that holds the cluster lock. Returns false when another node holds it, which is
-     * a skip rather than a failure: the CBOM keeps owing an ingest and the next run offers it again.
+     * One batch, inside the transaction that holds the cluster lock. Returns false when another node is ingesting the
+     * same CBOM, which is a skip rather than a failure: the CBOM keeps owing an ingest and the next run offers it
+     * again.
      */
     private boolean writeBatchUnderClusterLock(UUID cbomUuid, List<CbomAssetExtractor.ExtractedAsset> batch,
             OffsetDateTime seenAt) {
-        if (!clusterSynchronizer.tryLock(ClusterOperationSynchronizer.Operation.CBOM_ASSET_SYNC)) {
+        if (!clusterSynchronizer.tryLock(assetSyncLockKey(cbomUuid))) {
             return false;
         }
         // Before the first crypto_asset row lock any writer below will take. Re-entrant within the transaction, so
         // taking it here costs the writers' own acquisitions nothing.
         clusterSynchronizer.lock(CryptoAssetAliasWriter.ALIAS_DECISION_LOCK);
 
-        // A set, not a list: two components of one document can key as the same asset, and the verdict pass reads
-        // each row back once, after every source of the batch has been merged into it.
+        // A set, not a list: the verdict pass reads each row back once, after every source of the batch has been
+        // merged into it.
         final Set<UUID> written = new LinkedHashSet<>();
+        // In uuid order, which is the order CryptoAssetPqcVerdictWriter.applyStaleBatch takes crypto_asset row
+        // locks in. Every asset an ingest creates is immediately on the sweep's work list -- upsertIdentity leaves
+        // pqc_ruleset_version null -- and the sweep holds a different cluster lock, so the two do run at once; two
+        // transactions locking an overlapping row set in opposite orders deadlock, and on this side the loser fails
+        // the whole document and waits out cbom.sync.ingest-retry-after. An asset with no row yet sorts last and keeps
+        // document order: its uuid is minted by the insert, so there is nothing to order it by and no lock the sweep
+        // can be waiting on. The resolution is a plain read, so a row another node inserts in between is ordered as
+        // new -- which narrows the window rather than closing it, and is why the sweep's own retry-one-at-a-time path
+        // stays the backstop.
+        final Map<String, UUID> rows = new LinkedHashMap<>();
         for (CbomAssetExtractor.ExtractedAsset asset : batch) {
+            assetRepository
+                    .findUuidByIdentityKey(asset.identityKey())
+                    .ifPresent(uuid -> rows.put(asset.identityKey(), uuid));
+        }
+        final List<CbomAssetExtractor.ExtractedAsset> ordered = batch
+                .stream()
+                .sorted(Comparator
+                        .comparing((CbomAssetExtractor.ExtractedAsset asset) -> rows.containsKey(asset.identityKey())
+                                ? 0
+                                : 1)
+                        .thenComparing(asset -> rows.get(asset.identityKey()),
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        for (CbomAssetExtractor.ExtractedAsset asset : ordered) {
             final UUID assetUuid = assetWriter.upsertIdentity(asset.identityKey(), fieldsOf(asset), asset.guard());
             sourceWriter
                     .upsertSource(assetUuid, cbomUuid, propertiesOf(asset), asset.evidence(),
@@ -196,21 +268,53 @@ public class CbomAssetIngestService {
      * merge elected, not on whichever document happened to arrive last. Stamping here rather than leaving the rows to
      * {@code PqcVerdictSweeper} is a latency decision -- a null {@code pqc_ruleset_version} is already stale to the
      * sweep -- and it matters most on the first ingest, when the sweep has the largest backlog it will ever have.
+     *
+     * <p>
+     * Being a latency decision, it must not be able to fail the unit of work. A row the rules cannot evaluate is
+     * counted and left unstamped, which is exactly how the sweep finds it later; letting the exception out would roll
+     * back the whole batch -- every identity and source write in it -- and fail the document for ever, since the retry
+     * would meet the same row.
      */
-    private void stampVerdicts(Iterable<UUID> assetUuids) {
-        for (UUID assetUuid : assetUuids) {
-            final CryptoAsset row = assetRepository.findById(assetUuid).orElse(null);
-            if (row == null) {
-                continue;
+    private void stampVerdicts(Set<UUID> assetUuids) {
+        for (PqcStaleVerdictRow row : assetRepository.verdictRowsByUuids(assetUuids)) {
+            try {
+                final JsonNode merged = mergedPayload(row);
+                final PqcDecision decision = evaluator
+                        .evaluate(evaluator.fromStoredRow(row.fields(), merged),
+                                PqcEvaluator.nistQuantumSecurityLevel(merged));
+                assetWriter
+                        .applyPqcVerdict(row.uuid(), decision.verdict(), decision.ruleId(), decision.reason(),
+                                PqcRuleset.VERSION, decision.evaluatedFields());
+            } catch (RuntimeException e) {
+                meterRegistry.counter("crypto_asset.ingest.verdict_failed").increment();
+                // The uuid, never the identity key: this line reaches an operator's log aggregator.
+                log
+                        .warn("CBOM asset ingest: stamping the post-quantum verdict failed for cryptographic asset {}; leaving it to the sweep",
+                                row.uuid(), e);
             }
-            final JsonNode merged = JSON_COLUMN.valueToTree(row.getMergedCryptoProperties());
-            final PqcDecision decision = evaluator
-                    .evaluate(evaluator.fromStoredRow(fieldsOf(row), merged),
-                            PqcEvaluator.nistQuantumSecurityLevel(merged));
-            assetWriter
-                    .applyPqcVerdict(assetUuid, decision.verdict(), decision.ruleId(), decision.reason(),
-                            PqcRuleset.VERSION, decision.evaluatedFields());
         }
+    }
+
+    private static JsonNode mergedPayload(PqcStaleVerdictRow row) {
+        try {
+            return row.mergedCryptoPropertiesJson() == null
+                    ? null
+                    : JSON_COLUMN.readTree(row.mergedCryptoPropertiesJson());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("The stored merged cryptographic properties could not be read", e);
+        }
+    }
+
+    /**
+     * Gives the claim back when another node is already ingesting this CBOM. Nothing else records the outcome, so
+     * without this the row keeps the {@code IN_PROGRESS} the claim wrote: out of the pending list, into the retry list,
+     * and invisible for {@code cbom.sync.ingest-retry-after} -- a whole run skipped over work no node is doing.
+     */
+    private IngestOutcome lockedElsewhere(UUID cbomUuid, CbomAssetSyncState entryState) {
+        if (entryState != null && entryState != CbomAssetSyncState.SYNCED) {
+            runInOwnTransaction(() -> stateWriter.releaseClaim(cbomUuid, entryState));
+        }
+        return IngestOutcome.LOCKED_ELSEWHERE;
     }
 
     private IngestOutcome refuse(UUID cbomUuid, String reason) {
@@ -241,11 +345,10 @@ public class CbomAssetIngestService {
                 .of(PqcEvaluator.assetTypeOf(asset.normalized().assetType()), asset.normalized());
     }
 
-    /** The curve is joined back to the composite spelling the evaluator's rules and the identity preimage both use. */
-    private static CryptoAssetIdentityFields fieldsOf(CryptoAsset row) {
-        return new CryptoAssetIdentityFields(row.getAssetType(), row.getName(), row.getOid(), row.getAlgorithmFamily(),
-                row.getPrimitive(), row.getParameterSet(), CompositeCurve.join(row.getCurve()), row.getMode(),
-                row.getPadding(), row.getVariant());
+    /** The measure the cross-source merge itself elects on, so the fold inside a document agrees with it. */
+    private static int leafCountOf(CbomAssetExtractor.ExtractedAsset asset) {
+        final Map<String, Object> properties = propertiesOf(asset);
+        return properties == null ? 0 : CryptoPropertiesDigest.of(properties).leafCount();
     }
 
     @SuppressWarnings("unchecked")
@@ -255,10 +358,21 @@ public class CbomAssetIngestService {
     }
 
     /**
-     * The operator-visible half of a failure. A driver message is never it: a constraint violation's DETAIL line
-     * carries the failing row, and for {@code crypto_asset} that row carries the identity key.
+     * The operator-visible half of a failure.
+     *
+     * <p>
+     * A driver message is never it: a constraint violation's DETAIL line carries the failing row, and for
+     * {@code crypto_asset} that row carries the identity key. But most of what reaches here is not a constraint
+     * violation at all -- a guard refused because an alias already merges the asset, an identity key of the wrong
+     * shape, a lock that could not be acquired -- and translating those as "it would violate a database constraint"
+     * says something false to the one person who could act on it. A {@link ValidationException} is text the inventory's
+     * own writers shaped for an operator, so it is passed through; everything else goes to the translator, which reads
+     * the violated constraint's <em>name</em> and never the exception's message.
      */
     private static String safeReason(RuntimeException e) {
+        if (e instanceof ValidationException && e.getMessage() != null) {
+            return e.getMessage();
+        }
         return CryptoAssetConstraintTranslator.describe(e);
     }
 }

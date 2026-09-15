@@ -5,6 +5,7 @@ import com.otilm.core.dao.entity.Cbom;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Limit;
@@ -41,6 +42,17 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
      */
     @Query("SELECT c FROM Cbom c WHERE c.assetSyncState = :pending ORDER BY c.uuid")
     List<Cbom> findPendingAssetIngests(@Param("pending") CbomAssetSyncState pending, Limit limit);
+
+    /**
+     * The ingest state of one CBOM, read as a scalar.
+     *
+     * <p>
+     * A projection rather than the entity, because the ingest reads it outside any transaction to know what state its
+     * claim overwrote: loading the entity here would put it in whatever persistence context is bound to the thread, and
+     * the ingest's own batch transactions would then serve it from that cache.
+     */
+    @Query("SELECT c.assetSyncState FROM Cbom c WHERE c.uuid = :uuid")
+    Optional<CbomAssetSyncState> findAssetSyncState(@Param("uuid") UUID uuid);
 
     /**
      * The CBOMs whose ingest is to be tried again -- {@code IN_PROGRESS} or {@code FAILED} -- longest untouched first.
@@ -85,6 +97,12 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
      * than compared with an IS NULL arm: a bare null parameter leaves PostgreSQL unable to infer the parameter's type,
      * and the statement fails at the driver.
      *
+     * <p>
+     * {@code asset_sync_error} is deliberately <b>not</b> cleared here. A claim is not an attempt: the document read it
+     * pays for may answer nothing at all, and the release path can only put the state back, so clearing the reason
+     * would erase the last thing an operator had to read and leave the row {@code FAILED} with no reason for a whole
+     * retry window. The ingest's own {@code markInProgress} clears it at the point where an attempt genuinely starts.
+     *
      * @param neverAttempted the stand-in for "no attempt yet", which the caller substitutes on both sides
      * @return 1 when this caller may proceed, 0 when another node got there first
      */
@@ -92,7 +110,6 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
     @Query("""
             UPDATE Cbom c
             SET c.assetSyncState = :inProgress,
-                c.assetSyncError = NULL,
                 c.assetSyncAttemptedAt = CURRENT_TIMESTAMP
             WHERE c.uuid = :uuid
               AND c.assetSyncState = :expectedState

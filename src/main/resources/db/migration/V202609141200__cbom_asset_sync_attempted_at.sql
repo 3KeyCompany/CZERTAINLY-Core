@@ -9,6 +9,15 @@
 ALTER TABLE "cbom"
     ADD COLUMN "asset_sync_attempted_at" TIMESTAMPTZ;
 
--- The retry list reads (state, attempted_at) together and orders by the timestamp; the existing state index alone
--- leaves the ordering to a sort over every pending row.
+-- Both ingest work lists select on `asset_sync_state` and the retry list reads `asset_sync_attempted_at` out of the
+-- same row, so the timestamp is carried in the index to keep the retry list's filter off the heap.
+--
+-- It does not supply the retry list's ordering, and no index can while that query is shaped as it is: the
+-- `attempted_at IS NULL OR attempted_at < :retryBefore` disjunction is not a range condition, `NULLS FIRST` is the
+-- opposite of a btree's default, and `uuid` is the second sort key. The rows sorted are the ones the state predicate
+-- admits, which is what the work list is bounded by anyway.
+--
+-- `idx_cbom_asset_sync_state` goes, because this index has it as a strict prefix and serves every lookup it served.
+DROP INDEX IF EXISTS "idx_cbom_asset_sync_state";
+
 CREATE INDEX "idx_cbom_asset_sync_attempt" ON "cbom" ("asset_sync_state", "asset_sync_attempted_at");

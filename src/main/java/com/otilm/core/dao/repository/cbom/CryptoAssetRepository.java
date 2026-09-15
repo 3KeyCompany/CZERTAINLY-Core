@@ -249,6 +249,53 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
     }
 
     /**
+     * The same projection as {@link #findStaleVerdictRows}, for a caller that already knows which rows it wants: the
+     * ingest, which has just merged a batch's sources and stamps their verdicts before leaving them to the sweep.
+     *
+     * <p>
+     * <b>Native, and that is the point.</b> Read through {@code findById} these rows come from the first-level cache
+     * whenever one persistence context spans more than one of the ingest's batch transactions -- which is what
+     * {@code spring.jpa.open-in-view} produces on the REST {@code sync} path, since {@code JpaTransactionManager}
+     * reuses the request-bound {@code EntityManager} and a commit does not evict. An asset two batches of one document
+     * both touch would then be evaluated on the payload the first batch saw, and the mis-stamp is permanent: the stamp
+     * sets {@code pqc_evaluated_at} and {@code i_upd} to one {@code CURRENT_TIMESTAMP}, so
+     * {@link #findStaleVerdictRows}' {@code pqc_evaluated_at < i_upd} never re-offers the row.
+     *
+     * <p>
+     * Ordered by {@code uuid}, which the caller depends on: the verdict writes take {@code crypto_asset} row locks, and
+     * the sweep's own batch takes them in this order. Two writers ordering an overlapping row set differently is a
+     * deadlock.
+     */
+    @Query(value = """
+            SELECT uuid,
+                   asset_type,
+                   name,
+                   oid,
+                   algorithm_family,
+                   primitive,
+                   parameter_set,
+                   array_to_string(curve, '+') AS curve,
+                   mode,
+                   padding,
+                   variant,
+                   merged_crypto_properties::text AS merged_crypto_properties,
+                   xmin::text::bigint AS row_version
+            FROM {h-schema}crypto_asset
+            WHERE uuid IN :uuids
+            ORDER BY uuid
+            """, nativeQuery = true)
+    List<Tuple> findVerdictRowsByUuids(@Param("uuids") Collection<UUID> uuids);
+
+    /**
+     * {@link #findVerdictRowsByUuids} mapped onto the record the evaluator reads, as {@link #staleVerdictRows} does.
+     */
+    default List<PqcStaleVerdictRow> verdictRowsByUuids(Collection<UUID> uuids) {
+        return uuids.isEmpty()
+                ? List.of()
+                : findVerdictRowsByUuids(uuids).stream().map(PqcStaleVerdictRow::fromWorkListRow).toList();
+    }
+
+    /**
      * {@link #applyPqcVerdict} guarded against the sweep's read-to-write window, so a verdict computed from columns
      * that have since moved is refused rather than stamped current.
      *
@@ -316,8 +363,8 @@ public interface CryptoAssetRepository extends SecurityFilterRepository<CryptoAs
      * latency is the curve scan, and the property this loose index scan was written to buy the endpoint is not one the
      * endpoint has while curve is in it. Restoring it and making the curve list proportional to the number of distinct
      * curves are the same work: an expression index a skip scan can walk, a side table of members, or a cached value
-     * list. Recorded as open work on core#2166, which touches the same list; unmeasurable until ingest (core#2073) puts
-     * rows in the table.
+     * list. Recorded as open work on core#2166, which touches the same list. core#2073 is what first puts rows in the
+     * table, so the figure is measurable from the first ingest rather than estimated.
      */
     @Query(value = """
             WITH RECURSIVE vals AS (

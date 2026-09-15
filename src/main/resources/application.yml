@@ -420,6 +420,10 @@ cbom:
     overlap: ${CBOM_SYNC_OVERLAP:60s}
     # An entry that could not be stored is retried on this many later runs, then recorded as permanently skipped.
     skipped-retry-runs: ${CBOM_SYNC_SKIPPED_RETRY_RUNS:3}
+    # The kill switch for cryptographic-asset ingest, covering both discovery paths: the inline ingest of a document
+    # the feed pass has just stored, and the backlog pass below. max-ingest-documents: 0 disables only the backlog
+    # pass, so it cannot stop a newly stored CBOM from acquiring asset sources.
+    asset-ingest-enabled: ${CBOM_SYNC_ASSET_INGEST_ENABLED:true}
     # Assets written per ingest transaction. Bounds how long one ingest holds the alias advisory lock and its row locks.
     asset-batch-size: ${CBOM_SYNC_ASSET_BATCH_SIZE:100}
     # CBOMs one run ingests from the pending work list (crashed ingests, earlier failures, documents uploaded through

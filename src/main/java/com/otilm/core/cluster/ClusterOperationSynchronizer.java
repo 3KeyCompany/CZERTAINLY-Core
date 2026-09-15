@@ -21,8 +21,7 @@ public class ClusterOperationSynchronizer {
         SIGNING_RECORD_OUTBOX_DRAIN(0x51_67_4E_43_4F_42_44_52L),
         PROVIDER_STATUS_POLL_SWEEP(0x50_52_4F_56_50_4F_4C_4CL),
         DISCOVERY_WORK_SWEEP(0x44_49_53_43_57_4B_53_50L),
-        CRYPTO_ASSET_PQC_SWEEP(0x43_41_50_51_43_53_57_50L),
-        CBOM_ASSET_SYNC(0x43_42_4F_4D_41_53_59_4EL);
+        CRYPTO_ASSET_PQC_SWEEP(0x43_41_50_51_43_53_57_50L);
 
         private final long lockKey;
 
@@ -49,6 +48,24 @@ public class ClusterOperationSynchronizer {
         return (boolean) entityManager
                 .createNativeQuery("SELECT pg_try_advisory_xact_lock(:key)")
                 .setParameter("key", operation.lockKey)
+                .getSingleResult();
+    }
+
+    /**
+     * Tries to acquire a cluster-wide lock keyed on {@code key} without blocking.
+     * <p>
+     * The non-blocking counterpart of {@link #lock(String)}, for work that is scoped to one entity and that a node may
+     * skip when another node is already doing it: one key per entity means two nodes working different entities never
+     * contend, where an {@link Operation} constant would serialize the whole cluster onto one worker. The {@code key}
+     * is hashed into the advisory-lock keyspace via {@code hashtext}, exactly as {@link #lock(String)} does, so the two
+     * address the same lock and a caller may choose per call whether to wait.
+     * <p>
+     * Must be called inside a transaction, for the reason {@link #tryLock(Operation)} gives.
+     */
+    public boolean tryLock(String key) {
+        return (boolean) entityManager
+                .createNativeQuery("SELECT pg_try_advisory_xact_lock(hashtext(:key))")
+                .setParameter("key", key)
                 .getSingleResult();
     }
 

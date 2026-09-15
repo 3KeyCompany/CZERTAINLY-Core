@@ -9,6 +9,7 @@ import com.github.tomakehurst.wiremock.client.MappingBuilder;
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.otilm.api.exception.CbomRepositoryException;
+import com.otilm.api.model.core.cbom.CbomAssetSyncState;
 import com.otilm.api.model.core.settings.PlatformSettingsDto;
 import com.otilm.api.model.core.settings.SettingsSection;
 import com.otilm.api.model.core.settings.UtilsSettingsDto;
@@ -555,10 +556,13 @@ class CbomSyncITest extends BaseSpringBootTest {
 
     @Test
     void anEntryAlreadyInTheDatabaseIsADuplicateWithoutADocumentRead() throws Exception {
+        // Synced, so the backlog ingest pass has nothing to do with it and the only thing that could read the document
+        // is the feed pass -- which is what this pins.
         Cbom stored = new Cbom();
         stored.setSerialNumber("urn:uuid:dup");
         stored.setVersion(1);
         stored.setSpecVersion("1.6");
+        stored.setAssetSyncState(CbomAssetSyncState.SYNCED);
         cbomRepository.save(stored);
         stubPage("after", "0", "[" + entry("urn:uuid:dup", "1", STATS, null) + "]", null);
 
@@ -568,6 +572,31 @@ class CbomSyncITest extends BaseSpringBootTest {
         assertThat(skipRepository.count()).isZero();
         assertThat(cbomRepository.count()).isEqualTo(1);
         repository.verify(0, WireMock.getRequestedFor(WireMock.urlPathEqualTo("/api/v1/bom/urn:uuid:dup")));
+    }
+
+    /**
+     * The other half of the same contract, and a deliberate change to it. The feed pass skips a duplicate without
+     * reading its document, which is exactly what a crashed ingest and a CBOM uploaded through Core's own API both look
+     * like -- so the backlog pass re-reads the document of a duplicate that still owes an ingest. That read is the
+     * price of resumability: without it those assets are never ingested at all.
+     */
+    @Test
+    void aDuplicateThatStillOwesAnIngestIsReReadByTheBacklogPass() throws Exception {
+        Cbom stored = new Cbom();
+        stored.setSerialNumber("urn:uuid:dup");
+        stored.setVersion(1);
+        stored.setSpecVersion("1.6");
+        cbomRepository.save(stored);
+        assertThat(stored.getAssetSyncState()).isEqualTo(CbomAssetSyncState.PENDING);
+        stubPage("after", "0", "[" + entry("urn:uuid:dup", "1", STATS, null) + "]", null);
+        stubDocument("urn:uuid:dup", 1);
+
+        String result = cbomInternalService.sync();
+
+        assertThat(result).contains("skipped duplicates 1").contains("stored 0 new entries");
+        repository.verify(1, WireMock.getRequestedFor(WireMock.urlPathEqualTo("/api/v1/bom/urn:uuid:dup")));
+        assertThat(cbomRepository.findById(stored.getUuid()).orElseThrow().getAssetSyncState())
+                .isEqualTo(CbomAssetSyncState.SYNCED);
     }
 
     @Test

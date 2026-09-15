@@ -48,10 +48,24 @@ public class CbomAssetSyncStateWriter {
      */
     private static final OffsetDateTime NEVER_ATTEMPTED = OffsetDateTime.parse("1970-01-01T00:00:00Z");
 
-    /** Claims the CBOM for an ingest attempt, clearing any error from the previous one. */
+    /**
+     * Claims the CBOM for an ingest attempt, clearing any error from the previous one.
+     *
+     * <p>
+     * Guarded on {@link #NOT_YET_SYNCED} for the same reason {@link #markFailed} is, and it is not the same guard as
+     * {@link #claimForIngest}'s. The attempt timestamp is a retry window, never an ownership token: a run whose ingest
+     * outlives {@code cbom.sync.ingest-retry-after} loses its claim to another node without being told, and an
+     * unconditional write here would then walk a row that node has since finished back from {@code SYNCED} to
+     * {@code IN_PROGRESS}. What the two nodes write to {@code crypto_asset} still converges -- every write is an
+     * idempotent upsert, and the cluster lock admits one of them at a time -- so the state column is the only thing
+     * that needs guarding.
+     *
+     * @return 1 if the claim was written, 0 if the CBOM had been synced in the meantime
+     */
     @Transactional
     public int markInProgress(UUID cbomUuid) {
-        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.IN_PROGRESS, null, null, null);
+        return cbomRepository
+                .updateAssetSyncState(cbomUuid, CbomAssetSyncState.IN_PROGRESS, null, null, NOT_YET_SYNCED);
     }
 
     /**

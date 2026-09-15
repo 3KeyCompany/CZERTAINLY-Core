@@ -41,6 +41,21 @@ class CbomSyncPropertiesTest {
         assertThat(bound.overlap()).isEqualTo(Duration.ofSeconds(120));
     }
 
+    /**
+     * The kill switch. {@code max-ingest-documents: 0} disables only the backlog pass, so it cannot stop a newly stored
+     * CBOM from acquiring {@code crypto_asset_source} rows -- and a CBOM that has them cannot be deleted through the
+     * API until the deletion lifecycle lands. This is the value that covers both passes.
+     */
+    @Test
+    void assetIngestIsOnByDefaultAndCanBeTurnedOff() {
+        Binder defaults = new Binder(new MapConfigurationPropertySource(Map.of()));
+        assertThat(defaults.bindOrCreate("cbom.sync", Bindable.of(CbomSyncProperties.class)).assetIngestEnabled())
+                .isTrue();
+
+        Binder off = new Binder(new MapConfigurationPropertySource(Map.of("cbom.sync.asset-ingest-enabled", "false")));
+        assertThat(off.bindOrCreate("cbom.sync", Bindable.of(CbomSyncProperties.class)).assetIngestEnabled()).isFalse();
+    }
+
     @Test
     void zeroRetryRunsMeansAFailedEntryIsWrittenOffAtOnce() {
         assertThat(properties(1, Duration.ZERO, 0).maxAttempts()).isEqualTo(1);
@@ -91,19 +106,19 @@ class CbomSyncPropertiesTest {
     @Test
     void anUnusableIngestBoundIsRefused() {
         Duration retryAfter = Duration.ofMinutes(30);
-        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, 0, 50, retryAfter))
+        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, true, 0, 50, retryAfter))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cbom.sync.asset-batch-size");
-        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, 100, -1, retryAfter))
+        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, true, 100, -1, retryAfter))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cbom.sync.max-ingest-documents");
-        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, 100, 50, Duration.ofSeconds(-1)))
+        assertThatThrownBy(() -> new CbomSyncProperties(1000, Duration.ZERO, 3, true, 100, 50, Duration.ofSeconds(-1)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cbom.sync.ingest-retry-after");
     }
 
     /** The three values this test does not vary, so a new bound cannot be added without a test naming it. */
     private static CbomSyncProperties properties(int pageSize, Duration overlap, int skippedRetryRuns) {
-        return new CbomSyncProperties(pageSize, overlap, skippedRetryRuns, 100, 50, Duration.ofMinutes(30));
+        return new CbomSyncProperties(pageSize, overlap, skippedRetryRuns, true, 100, 50, Duration.ofMinutes(30));
     }
 }

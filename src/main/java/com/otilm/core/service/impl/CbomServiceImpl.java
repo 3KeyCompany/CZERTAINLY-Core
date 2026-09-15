@@ -819,11 +819,34 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         if (isDuplicate.get()) {
             return StoreOutcome.DUPLICATE;
         }
-        // The header row is committed, so the assets are ingested with the document already in hand rather than left
-        // to ingestPending, which would re-read it. A failure here is the CBOM's ingest state to record, never the
-        // header's: the row is stored either way, and the run's own counters carry what the ingest did.
-        countIngest(assetIngestService.ingest(storedUuid.get(), document, run.startedAt), run);
+        ingestInline(storedUuid.get(), document, run);
         return StoreOutcome.STORED;
+    }
+
+    /**
+     * Ingests the assets of a document the run has just stored, with the document already in hand rather than left to
+     * {@link #ingestPending}, which would re-read it.
+     *
+     * <p>
+     * A failure here is the CBOM's ingest state to record, never the header's: the row is stored either way, and the
+     * run's own counters carry what the ingest did. That is also why nothing is allowed out of this method.
+     * {@link #store} promises never to throw for one entry's failure, and the ingest's own state writes are not
+     * exception-safe -- a lock that could not be acquired or a connection that dropped while it marked the row would
+     * otherwise abandon the remaining feed pages, skip {@link #settleUnavailable} so that every entry already deferred
+     * got no skip record at all, skip the backlog pass, and leave the watermark to re-read the whole window next run.
+     */
+    private void ingestInline(UUID cbomUuid, Map<String, Object> document, SyncRun run) {
+        if (!syncProperties.assetIngestEnabled()) {
+            return;
+        }
+        try {
+            countIngest(assetIngestService.ingest(cbomUuid, document, run.startedAt), run);
+        } catch (RuntimeException e) {
+            logger
+                    .getLogger()
+                    .warn("CBOM asset ingest: CBOM {}: the ingest failed outside its own error handling", cbomUuid, e);
+            run.ingestFailed++;
+        }
     }
 
     /**
@@ -1082,7 +1105,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
      * holds must never span an HTTP call.
      */
     private void ingestPending(SyncRun run) {
-        if (syncProperties.maxIngestDocuments() == 0) {
+        if (!syncProperties.assetIngestEnabled() || syncProperties.maxIngestDocuments() == 0) {
             return;
         }
         final int budget = syncProperties.maxIngestDocuments();
@@ -1098,14 +1121,28 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         final List<DeferredIngest> deferred = new ArrayList<>();
         final int readsBefore = run.ingestReads;
         for (Cbom cbom : workList) {
-            final CbomAssetSyncState claimedFrom = cbom.getAssetSyncState();
-            if (!claimed(cbom)) {
-                run.ingestLockedElsewhere++;
-                continue;
+            // Per entry, for the reason ingestInline gives: one document's database hiccup must not abandon the
+            // backlog, and every write below -- the claim, the failure records, settleUnreadable's own -- can throw.
+            try {
+                final CbomAssetSyncState claimedFrom = cbom.getAssetSyncState();
+                if (!claimed(cbom)) {
+                    run.ingestLockedElsewhere++;
+                    continue;
+                }
+                ingestOnePending(cbom, run, deferred, claimedFrom);
+            } catch (RuntimeException e) {
+                logger
+                        .getLogger()
+                        .warn("CBOM asset ingest: CBOM serialNumber {} version {}: the ingest failed outside its own error handling",
+                                cbom.getSerialNumber(), cbom.getVersion(), e);
+                run.ingestFailed++;
             }
-            ingestOnePending(cbom, run, deferred, claimedFrom);
         }
-        settleUnreadable(deferred, run, run.ingestReads > readsBefore);
+        try {
+            settleUnreadable(deferred, run, run.ingestReads > readsBefore);
+        } catch (RuntimeException e) {
+            logger.getLogger().warn("CBOM asset ingest: settling the unreadable documents of this run failed", e);
+        }
     }
 
     /**
@@ -1234,6 +1271,10 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
             case REFUSED -> run.ingestRefused++;
             case FAILED -> run.ingestFailed++;
             case LOCKED_ELSEWHERE -> run.ingestLockedElsewhere++;
+            // Nothing happened and nothing was left owing, so there is nothing for the run report to say. Both passes
+            // return before reaching the ingest when the switch is off; this arm is what keeps a future caller that
+            // does not from being counted as a failure.
+            case DISABLED -> logger.getLogger().trace("CBOM asset ingest is disabled");
         }
     }
 
