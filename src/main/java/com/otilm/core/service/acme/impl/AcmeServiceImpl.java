@@ -72,6 +72,7 @@ import com.otilm.core.service.acme.AcmeDnsChallengeValidator;
 import com.otilm.core.service.acme.AcmeExternalService;
 import com.otilm.core.service.acme.ChallengeValidationResult;
 import com.otilm.core.service.acme.eab.AcmeEabVerifier;
+import com.otilm.core.service.acme.identifier.AcmeCsrIdentifiers;
 import com.otilm.core.service.acme.identifier.AcmeIdentifierPolicy;
 import com.otilm.core.service.acme.message.AcmeJwsRequest;
 import com.otilm.core.service.v2.ClientOperationInternalService;
@@ -117,13 +118,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
-import org.bouncycastle.asn1.x500.style.BCStyle;
-import org.bouncycastle.asn1.x500.style.IETFUtils;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.Extensions;
-import org.bouncycastle.asn1.x509.GeneralName;
-import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequest;
 import org.bouncycastle.util.io.pem.PemObject;
@@ -1467,54 +1461,11 @@ public class AcmeServiceImpl implements AcmeExternalService {
     }
 
     private void validateCSR(JcaPKCS10CertificationRequest csr, AcmeOrder order) throws AcmeProblemDocumentException {
-        List<String> sans = new ArrayList<>();
-        List<String> dnsIdentifiers = new ArrayList<>();
-
-        org.bouncycastle.asn1.pkcs.Attribute[] certAttributes = csr.getAttributes();
-        try {
-            String commonName = IETFUtils.valueToString(csr.getSubject().getRDNs(BCStyle.CN)[0].getFirst().getValue());
-            if (!commonName.isEmpty()) {
-                sans.add(commonName);
-                dnsIdentifiers.add(commonName);
-            }
-
-        } catch (Exception e) {
-            logger.warn("Unable to find common name: {}", e.getMessage());
-        }
-        for (org.bouncycastle.asn1.pkcs.Attribute attribute : certAttributes) {
-            if (attribute.getAttrType().equals(PKCSObjectIdentifiers.pkcs_9_at_extensionRequest)) {
-                Extensions extensions = Extensions.getInstance(attribute.getAttrValues().getObjectAt(0));
-                GeneralNames gns = GeneralNames.fromExtensions(extensions, Extension.subjectAlternativeName);
-                if (gns != null) {
-                    GeneralName[] names = gns.getNames();
-                    for (GeneralName name : names) {
-                        if (name.getTagNo() == GeneralName.dNSName) {
-                            dnsIdentifiers.add(IETFUtils.valueToString(name.getName()));
-                        }
-                        sans.add(IETFUtils.valueToString(name.getName()));
-                    }
-                }
-            }
-        }
-
-        List<String> identifiers = SerializationUtil
-                .deserializeIdentifiers(order.getIdentifiers())
-                .stream()
-                .map(Identifier::getValue)
-                .toList();
-
-        List<String> identifiersDns = new ArrayList<>();
+        AcmeCsrIdentifiers offered = AcmeCsrIdentifiers.of(csr);
         for (Identifier identifier : SerializationUtil.deserializeIdentifiers(order.getIdentifiers())) {
-            if (identifier.getType().equals("dns")) {
-                identifiersDns.add(identifier.getValue());
+            if (!offered.carries(identifier)) {
+                throw new AcmeProblemDocumentException(HttpStatus.BAD_REQUEST, Problem.BAD_CSR);
             }
-        }
-
-        if (!new HashSet<>(sans).containsAll(identifiers)) {
-            throw new AcmeProblemDocumentException(HttpStatus.BAD_REQUEST, Problem.BAD_CSR);
-        }
-        if (!new HashSet<>(dnsIdentifiers).containsAll(identifiersDns)) {
-            throw new AcmeProblemDocumentException(HttpStatus.BAD_REQUEST, Problem.BAD_CSR);
         }
 
         try {

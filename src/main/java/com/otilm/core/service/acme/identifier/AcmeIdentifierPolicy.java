@@ -153,7 +153,12 @@ public final class AcmeIdentifierPolicy {
         return true;
     }
 
-    private static Optional<byte[]> addressBytes(String value) {
+    /**
+     * The octets an IP literal denotes, or empty when the text is not one. The platform's only parser for the purpose,
+     * so that what a policy pre-authorizes and what CSR validation accepts at finalize read an address the same way,
+     * and neither reaches a resolver to do it.
+     */
+    public static Optional<byte[]> addressBytes(String value) {
         if (value.length() > MAX_ADDRESS_LENGTH) {
             return Optional.empty();
         }
