@@ -1626,6 +1626,9 @@ class CryptographicKeyServiceITest extends BaseSpringBootTest {
         Certificate certificate = certificateRepository.findById(certificateUuid).orElseThrow();
         Assertions.assertNull(certificate.getKeyUuid());
         Assertions.assertNull(certificate.getAltKeyUuid());
+        Assertions
+                .assertNull(
+                        ownerAssociationRepository.findByResourceAndObjectUuid(Resource.CRYPTOGRAPHIC_KEY, parentUuid));
         Assertions.assertFalse(commentRepository.existsByResourceAndObjectUuid(Resource.CRYPTOGRAPHIC_KEY, parentUuid));
         Assertions
                 .assertTrue(groupAssociationRepository

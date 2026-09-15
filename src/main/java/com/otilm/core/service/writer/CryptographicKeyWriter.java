@@ -203,8 +203,11 @@ public class CryptographicKeyWriter {
      */
     @Transactional
     public void deleteKeyIfEmpty(CryptographicKeyBasicModel key) {
-        if (cryptographicKeyRepository.findForUpdateByUuid(key.uuid()).isPresent()
-                && !cryptographicKeyItemRepository.existsByKeyUuid(key.uuid())) {
+        Optional<CryptographicKey> lockedKey = cryptographicKeyRepository.findForUpdateByUuid(key.uuid());
+        if (lockedKey.isPresent() && !cryptographicKeyItemRepository.existsByKeyUuid(key.uuid())) {
+            // Association deletion must not leave references to removed entities in the persistence context.
+            lockedKey.get().setOwner(null);
+            lockedKey.get().getGroups().clear();
             deleteKeyWithAssociations(key);
         }
     }
