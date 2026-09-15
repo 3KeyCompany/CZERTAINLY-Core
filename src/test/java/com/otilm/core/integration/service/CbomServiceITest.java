@@ -1887,6 +1887,35 @@ class CbomServiceITest extends BaseSpringBootTest {
         assertNull(afterRace.getAssetSyncError());
     }
 
+    /**
+     * A revision a later one has already ingested costs no document read at all. The check has to come before the read
+     * because the read is the expense: it spends one of the run's {@code max-ingest-documents} slots and one of the
+     * {@code ingestReads} that {@code settleUnreadable} weighs its outage verdict on, and a repository carrying many
+     * historical revisions is exactly the population this backlog pass exists for. It also settles a superseded
+     * revision whose old document has since been removed upstream, which the read would report as a 404 retried for
+     * ever.
+     */
+    @Test
+    void aSupersededRevisionIsSettledByTheBacklogPassWithoutADocumentRead() throws Exception {
+        Cbom older = savePendingHeader("serial-superseded");
+        Cbom newer = new Cbom();
+        newer.setSerialNumber("serial-superseded");
+        newer.setVersion(2);
+        newer.setSpecVersion("1.6");
+        newer = cbomRepository.save(newer);
+        syncStateWriter.markSynced(newer.getUuid(), OffsetDateTime.now());
+
+        mockSearchResponse(List.of());
+
+        cbomInternalService.sync();
+
+        mockServer.verify(0, WireMock.getRequestedFor(WireMock.urlPathEqualTo("/api/v1/bom/serial-superseded")));
+        Cbom afterRun = cbomRepository.findById(older.getUuid()).orElseThrow();
+        assertEquals(CbomAssetSyncState.SYNCED, afterRun.getAssetSyncState());
+        assertNull(afterRun.getAssetsSyncedAt(),
+                "it owes no ingest, but it never performed one either -- and the dashboard reads this column");
+    }
+
     private Cbom savePendingHeader(String serialNumber) {
         Cbom header = new Cbom();
         header.setSerialNumber(serialNumber);

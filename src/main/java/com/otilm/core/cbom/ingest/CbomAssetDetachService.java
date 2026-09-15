@@ -9,7 +9,6 @@ import com.otilm.core.service.writer.cbom.CryptoAssetAliasWriter;
 import com.otilm.core.service.writer.cbom.CryptoAssetSourceWriter;
 import com.otilm.core.service.writer.cbom.CryptoAssetWriter;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,20 +24,38 @@ import org.springframework.transaction.annotation.Transactional;
  * composes the writers, and writes nothing itself.
  *
  * <p>
- * <b>The orphan rule.</b> An asset whose last source is withdrawn is deleted, unless an alias names it -- on either
- * side of a merge -- in which case the row is kept with {@code source_count} at zero and its payload cleared. The
- * inventory is meant to say what the documents currently say, and a row nothing sources any more says nothing; but an
- * alias is an operator's decision about which assets are the same asset, deleting the asset takes that decision with it
- * by cascade, and a sweep no operator asked for must not do that silently.
+ * <b>The orphan rule.</b> An asset whose last source is withdrawn is deleted, unless an alias is <em>pointed at</em> it
+ * -- that is, its key is some alias's canonical key -- in which case the row is kept with {@code source_count} at zero
+ * and its payload cleared. The inventory is meant to say what the documents currently say, and a row nothing sources
+ * any more says nothing; but an alias is an operator's decision about which assets are the same asset,
+ * {@code crypto_asset_alias} cascades from the canonical row, and a sweep no operator asked for must not discard that
+ * decision silently. The absorbed side carries no such risk -- the alias table has no foreign key on
+ * {@code absorbed_key}, and an absorbed row that no longer exists is its normal state -- so an orphan named only there
+ * is collected like any other.
  *
  * <p>
- * <b>Why a batch may be abandoned.</b> Every batch takes {@link CbomAssetIngestService#assetSyncLockKey(UUID) the
- * withdrawn CBOM's asset-sync lock} and gives up when another node holds it, exactly as ingest does -- the two paths
- * write the same rows, and the lock is what keeps one node at a time on them. The key is the document's, not the
- * operation's, so a withdrawal and an unrelated document's ingest do not contend; the pair that must exclude each other
- * is this withdrawal and an ingest of the same CBOM, which share the key. Giving up is safe because the caller learns
- * it (the return value) and leaves the CBOM owing the work; it is not safe to ignore, because a half-withdrawn version
- * leaves an asset sourced by two revisions of one document at once.
+ * <b>A kept orphan is a row state nothing produced before this class.</b> {@code source_count = 0} with no payload is
+ * listed, paginated and counted by the cryptographic asset API exactly like a sourced asset, because no read path has a
+ * {@code source_count > 0} predicate. That is deliberate for now -- the row is kept precisely so an operator can still
+ * see and unmerge the decision that holds it, and hiding it would make the alias unreachable through the API that
+ * created it -- but it does mean the inventory's totals count assets no document currently mentions. Recorded as open
+ * work on core#2073.
+ *
+ * <p>
+ * <b>Why a batch may be abandoned, and what survives it.</b> Every batch takes
+ * {@link CbomAssetIngestService#assetSyncLockKey(UUID) the withdrawn CBOM's asset-sync lock} and gives up when another
+ * node holds it, exactly as ingest does -- the two paths write the same rows, and the lock is what keeps one node at a
+ * time on them. The key is the document's, not the operation's, so a withdrawal and an unrelated document's ingest do
+ * not contend; the pair that must exclude each other is this withdrawal and an ingest of the same CBOM, which share the
+ * key.
+ *
+ * <p>
+ * Each batch commits in its own transaction, so giving up is <b>not</b> all-or-nothing: the batches that already
+ * committed stay committed, their orphans included, and deleting an orphan is not reversible. What the caller is
+ * promised is only that no more than its own unit of work is lost -- {@link Withdrawal#complete()} says whether the
+ * rest was reached, and the counts describe what really happened either way. That is safe because the caller leaves the
+ * CBOM owing the work and the next run redoes the whole withdrawal idempotently; it is not safe to ignore, because a
+ * revision left half-withdrawn still sources part of an inventory another revision now speaks for.
  */
 @Slf4j
 @Service
@@ -65,25 +82,35 @@ public class CbomAssetDetachService {
         this.batchSize = properties.assetBatchSize();
     }
 
-    /** What withdrawing a CBOM's contribution did, for the run report and for the tests that pin the orphan rule. */
-    public record Withdrawal(int detached, int deleted, int kept) {
+    /**
+     * What withdrawing a CBOM's contribution did, for the run report and for the tests that pin the orphan rule.
+     *
+     * @param complete whether every batch was reached. False means another node held the cluster lock partway through:
+     * the counts still describe what this node committed before it stopped, and the CBOM goes on owing the rest.
+     */
+    public record Withdrawal(int detached, int deleted, int kept, boolean complete) {
 
-        static final Withdrawal NOTHING = new Withdrawal(0, 0, 0);
+        static final Withdrawal NOTHING = new Withdrawal(0, 0, 0, true);
 
         Withdrawal plus(Withdrawal other) {
-            return new Withdrawal(detached + other.detached, deleted + other.deleted, kept + other.kept);
+            return new Withdrawal(detached + other.detached, deleted + other.deleted, kept + other.kept,
+                    complete && other.complete);
         }
+
+        /** The unit stopped here: what this batch committed is nothing, and the rest was left for whoever holds it. */
+        static final Withdrawal ABANDONED = new Withdrawal(0, 0, 0, false);
     }
 
     /**
      * Withdraws every link the given CBOM contributed, applying the orphan rule to each asset it leaves without a
      * source.
      *
-     * @return empty when another node holds the cluster lock and the work was left for it -- the CBOM still sources
-     * every asset it did before, and the caller must not report the withdrawal as done
+     * @return what was withdrawn, and whether the whole CBOM was reached. An incomplete withdrawal is not an empty one:
+     * see the class comment. A caller that needs the CBOM fully withdrawn must treat {@code complete == false} as work
+     * still owed and repeat the call, not as "nothing happened".
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public Optional<Withdrawal> withdraw(UUID cbomUuid) {
+    public Withdrawal withdraw(UUID cbomUuid) {
         final List<UUID> assets = sourceRepository.findAssetUuidsByCbomUuid(cbomUuid);
         Withdrawal total = Withdrawal.NOTHING;
         for (int from = 0; from < assets.size(); from += batchSize) {
@@ -91,11 +118,11 @@ public class CbomAssetDetachService {
             final Withdrawal done = transactionHandler
                     .runInNewTransaction(() -> withdrawBatchUnderClusterLock(cbomUuid, batch));
             if (done == null) {
-                return Optional.empty();
+                return total.plus(Withdrawal.ABANDONED);
             }
             total = total.plus(done);
         }
-        return Optional.of(total);
+        return total;
     }
 
     /** One batch, inside the transaction that holds the cluster lock. Null when another node holds it. */
@@ -108,38 +135,24 @@ public class CbomAssetDetachService {
         clusterSynchronizer.lock(CryptoAssetAliasWriter.ALIAS_DECISION_LOCK);
 
         int detached = 0;
-        int deleted = 0;
-        int kept = 0;
         for (UUID assetUuid : assets) {
             detached += sourceWriter.detachCbom(assetUuid, cbomUuid);
-            switch (settleOrphan(assetUuid)) {
-                case DELETED -> deleted++;
-                case KEPT -> kept++;
-                case NOT_ORPHANED -> {
-                    // Another CBOM still sources it; nothing to settle.
-                }
+        }
+        // Once for the batch, after every detach: both questions are set-shaped, and asking them per asset would put
+        // two more round trips per asset inside the transaction holding the cluster-wide ALIAS_DECISION_LOCK.
+        int deleted = 0;
+        int kept = 0;
+        for (CryptoAssetRepository.OrphanRow orphan : assetRepository.orphansAmong(assets)) {
+            if (orphan.namedByAnAlias()) {
+                log
+                        .debug("CBOM asset withdrawal: asset {} has no source left but an alias points at it; keeping the row",
+                                orphan.uuid());
+                kept++;
+            } else {
+                assetWriter.delete(orphan.uuid());
+                deleted++;
             }
         }
-        return new Withdrawal(detached, deleted, kept);
-    }
-
-    private enum OrphanOutcome {
-        DELETED,
-        KEPT,
-        NOT_ORPHANED
-    }
-
-    private OrphanOutcome settleOrphan(UUID assetUuid) {
-        if (!assetRepository.isOrphaned(assetUuid)) {
-            return OrphanOutcome.NOT_ORPHANED;
-        }
-        if (assetRepository.isNamedByAnAlias(assetUuid)) {
-            log
-                    .debug("CBOM asset withdrawal: asset {} has no source left but an alias names it; keeping the row",
-                            assetUuid);
-            return OrphanOutcome.KEPT;
-        }
-        assetWriter.delete(assetUuid);
-        return OrphanOutcome.DELETED;
+        return new Withdrawal(detached, deleted, kept, true);
     }
 }

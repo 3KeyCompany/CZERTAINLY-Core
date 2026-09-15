@@ -1,8 +1,6 @@
 package com.otilm.core.integration.cbom;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.otilm.api.exception.ValidationException;
 import com.otilm.api.model.common.BulkActionMessageDto;
 import com.otilm.api.model.core.cbom.CbomAssetSyncState;
@@ -13,6 +11,7 @@ import com.otilm.core.cbom.asset.CryptoAssetIdentityFields;
 import com.otilm.core.cbom.asset.identity.IdentityRuleset;
 import com.otilm.core.cbom.ingest.CbomAssetDetachService;
 import com.otilm.core.cbom.ingest.CbomAssetIngestService;
+import com.otilm.core.cbom.ingest.CbomIngestTestFixtures;
 import com.otilm.core.dao.CryptoAssetConstraintTranslator;
 import com.otilm.core.dao.entity.Cbom;
 import com.otilm.core.dao.entity.cbom.CbomTombstone;
@@ -901,19 +900,25 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
         UUID assetUuid = upsert(rsa2048(), null);
         sourceWriter.upsertSource(assetUuid, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
 
-        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid()).orElseThrow();
+        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid());
 
-        assertThat(withdrawal).isEqualTo(new CbomAssetDetachService.Withdrawal(1, 1, 0));
+        assertThat(withdrawal).isEqualTo(new CbomAssetDetachService.Withdrawal(1, 1, 0, true));
         assertThat(assetRepository.findById(assetUuid)).isEmpty();
     }
 
     /**
      * The exception to it, and the reason there is one: an alias is an operator's decision that two assets are one, it
-     * is not derived from any document, and {@code crypto_asset_alias} cascades from the asset -- so collecting the
-     * orphan would discard the decision with it, silently and on a schedule nobody triggered.
+     * is not derived from any document, and {@code crypto_asset_alias_to_canonical_key} cascades -- so collecting the
+     * canonical orphan would discard the decision with it, silently and on a schedule nobody triggered.
+     *
+     * <p>
+     * The absorbed side is collected like any other orphan. {@code absorbed_key} carries no foreign key at all, so no
+     * cascade can reach the alias from there, and the migration that declared the table says an absorbed row that no
+     * longer exists is its normal state. Keeping it would retain a row the documents no longer mention, to protect a
+     * decision that was never at risk.
      */
     @Test
-    void anOrphanAnAliasNamesIsKeptWithNothingLeftToAttribute() {
+    void anOrphanAnAliasPointsAtIsKeptAndTheAbsorbedSideIsCollected() {
         UUID absorbedUuid = upsert(algorithm("RSA", "2048"), null);
         UUID canonicalUuid = upsert(algorithm("RSA", "4096"), null);
         aliasWriter
@@ -922,14 +927,41 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
         sourceWriter.upsertSource(absorbedUuid, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
         sourceWriter.upsertSource(canonicalUuid, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
 
-        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid()).orElseThrow();
+        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid());
 
         assertThat(withdrawal)
-                .describedAs("both sides of the merge are named by the decision, so neither is collected")
-                .isEqualTo(new CbomAssetDetachService.Withdrawal(2, 0, 2));
-        assertThat(asset(absorbedUuid).getSourceCount()).isZero();
-        assertThat(asset(absorbedUuid).getMergedCryptoProperties()).isNull();
-        assertThat(aliasRepository.count()).isEqualTo(1);
+                .describedAs("the canonical row is what the alias cascades from, so only it is kept")
+                .isEqualTo(new CbomAssetDetachService.Withdrawal(2, 1, 1, true));
+        assertThat(assetRepository.findById(absorbedUuid))
+                .describedAs("no cascade reaches the alias from the absorbed side, so nothing protects this row")
+                .isEmpty();
+        assertThat(asset(canonicalUuid).getSourceCount()).isZero();
+        assertThat(asset(canonicalUuid).getMergedCryptoProperties()).isNull();
+        assertThat(aliasRepository.count()).describedAs("the decision the carve-out exists for survives").isEqualTo(1);
+    }
+
+    /**
+     * The alias test is asset-specific, not "any alias anywhere". Without that the collector stops collecting entirely
+     * on any tenant that has ever recorded a merge -- quietly, since every orphan would simply be reported as kept.
+     */
+    @Test
+    void anUnrelatedAliasDoesNotSaveAnOrphanFromCollection() {
+        UUID absorbedUuid = upsert(algorithm("RSA", "2048"), null);
+        UUID canonicalUuid = upsert(algorithm("RSA", "4096"), null);
+        aliasWriter
+                .record(asset(absorbedUuid).getIdentityKey(), asset(canonicalUuid).getIdentityKey(), "duplicate",
+                        "operator");
+        UUID unrelated = upsert(algorithm("AES", "256"), null);
+        sourceWriter.upsertSource(canonicalUuid, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
+        sourceWriter.upsertSource(unrelated, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
+
+        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid());
+
+        assertThat(withdrawal)
+                .describedAs("the alias names one of these two assets; the other is an ordinary orphan")
+                .isEqualTo(new CbomAssetDetachService.Withdrawal(2, 1, 1, true));
+        assertThat(assetRepository.findById(unrelated)).isEmpty();
+        assertThat(assetRepository.findById(canonicalUuid)).isPresent();
     }
 
     @Test
@@ -938,9 +970,9 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
         sourceWriter.upsertSource(assetUuid, leanCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
         sourceWriter.upsertSource(assetUuid, richCbom.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
 
-        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid()).orElseThrow();
+        CbomAssetDetachService.Withdrawal withdrawal = detachService.withdraw(leanCbom.getUuid());
 
-        assertThat(withdrawal).isEqualTo(new CbomAssetDetachService.Withdrawal(1, 0, 0));
+        assertThat(withdrawal).isEqualTo(new CbomAssetDetachService.Withdrawal(1, 0, 0, true));
         assertThat(asset(assetUuid).getSourceCount()).isEqualTo(1);
     }
 
@@ -969,7 +1001,10 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
                     assertThat(surviving.getName()).isEqualTo("aes-256");
                     assertThat(surviving.getSourceCount()).isEqualTo(1);
                 });
-        assertThat(cbom(first.getUuid()).getAssetSyncState()).isEqualTo(CbomAssetSyncState.SYNCED);
+        assertThat(cbom(first.getUuid()).getAssetSyncState())
+                .describedAs("SYNCED here means the row owes no ingest, not that its assets are in the inventory: it "
+                        + "sources nothing at all, and the version that superseded it owns what it used to say")
+                .isEqualTo(CbomAssetSyncState.SYNCED);
     }
 
     /**
@@ -989,6 +1024,72 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
         assertThat(sourceRepository.findAssetUuidsByCbomUuid(first.getUuid())).isEmpty();
         assertThat(assetRepository.count()).isEqualTo(1);
         assertThat(cbom(first.getUuid()).getAssetSyncState()).isEqualTo(CbomAssetSyncState.SYNCED);
+    }
+
+    /**
+     * A later row that has never itself been ingested supersedes nothing. After the upgrade that added the state column
+     * every pre-existing row is PENDING, so a serial's revisions are commonly all unsynced at once -- and writing the
+     * older one off against a newer row whose document may never be readable would leave the URN contributing nothing
+     * at all, where before it contributed a stale but present inventory. Nothing moves a SYNCED row back onto a work
+     * list, so that loss would be permanent.
+     */
+    @Test
+    void aLaterVersionThatWasNeverIngestedDoesNotSupersedeTheOlderOne() {
+        Cbom first = cbom("urn:uuid:app", 1);
+        cbom("urn:uuid:app", 2);
+
+        assertThat(ingestService.ingest(first.getUuid(), twoAlgorithms(), NOW))
+                .describedAs("the newer row exists but has contributed nothing, so this document still speaks")
+                .isEqualTo(CbomAssetIngestService.IngestOutcome.INGESTED);
+        assertThat(assetRepository.count()).isEqualTo(2);
+    }
+
+    /**
+     * A superseded revision gives back whatever it had already attached. A revision can reach the write-off holding
+     * part of an inventory -- an attempt that failed partway, or one a newer revision overtook between batches -- and
+     * marking it synced without withdrawing those links would strand them for ever: the withdrawal half of supersession
+     * only ever runs from the ingesting version, which has already been and gone.
+     */
+    @Test
+    void aSupersededVersionWithdrawsWhatItHadAlreadyContributed() {
+        Cbom first = cbom("urn:uuid:app", 1);
+        Cbom second = cbom("urn:uuid:app", 2);
+        assertThat(ingestService.ingest(second.getUuid(), oneAlgorithm(), NOW))
+                .isEqualTo(CbomAssetIngestService.IngestOutcome.INGESTED);
+        // The partial contribution a failed attempt of the older revision would have left behind.
+        UUID stranded = upsert(rsa2048(), null);
+        sourceWriter.upsertSource(stranded, first.getUuid(), Map.of("assetType", "algorithm"), List.of(), NOW);
+
+        assertThat(ingestService.ingest(first.getUuid(), twoAlgorithms(), NOW))
+                .isEqualTo(CbomAssetIngestService.IngestOutcome.SUPERSEDED);
+
+        assertThat(sourceRepository.findAssetUuidsByCbomUuid(first.getUuid()))
+                .describedAs("nothing else would ever come back for these links")
+                .isEmpty();
+        assertThat(assetRepository.findById(stranded)).describedAs("its last source went with the write-off").isEmpty();
+    }
+
+    /**
+     * A superseded revision is not stamped with a sync time. The column is not private bookkeeping: the dashboard
+     * serves its maximum over every CBOM as "last completed sync at", the DTO serves it per row, and
+     * {@code CBOM_ASSETS_SYNCED_AT} is a user-facing filter -- so stamping it would let a run that ingested nothing
+     * advance the platform's completion time.
+     */
+    @Test
+    void aSupersededVersionIsNotGivenASyncTimeOfItsOwn() {
+        Cbom first = cbom("urn:uuid:app", 1);
+        Cbom second = cbom("urn:uuid:app", 2);
+        ingestService.ingest(second.getUuid(), oneAlgorithm(), NOW);
+
+        assertThat(ingestService.ingest(first.getUuid(), twoAlgorithms(), NOW))
+                .isEqualTo(CbomAssetIngestService.IngestOutcome.SUPERSEDED);
+
+        assertThat(cbom(first.getUuid()).getAssetsSyncedAt())
+                .describedAs("it owes no ingest, but it never performed one either")
+                .isNull();
+        assertThat(cbom(second.getUuid()).getAssetsSyncedAt())
+                .describedAs("the version that really did ingest keeps its time")
+                .isNotNull();
     }
 
     // ---- helpers ----
@@ -1043,23 +1144,10 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
     }
 
     private static JsonNode oneAlgorithm() {
-        return read("{\"components\":[" + component("AES-256") + "]}");
+        return CbomIngestTestFixtures.algorithmDocument("AES-256");
     }
 
     private static JsonNode twoAlgorithms() {
-        return read("{\"components\":[" + component("AES-256") + "," + component("RSA-2048") + "]}");
-    }
-
-    private static String component(String name) {
-        return "{\"type\":\"cryptographic-asset\",\"name\":\"" + name + "\",\"cryptoProperties\":"
-                + "{\"assetType\":\"algorithm\",\"algorithmProperties\":{}}}";
-    }
-
-    private static JsonNode read(String json) {
-        try {
-            return new ObjectMapper().readTree(json);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException(e);
-        }
+        return CbomIngestTestFixtures.algorithmDocument("AES-256", "RSA-2048");
     }
 }

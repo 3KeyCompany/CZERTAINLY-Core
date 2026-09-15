@@ -1225,6 +1225,18 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
      */
     private void ingestOnePending(Cbom cbom, SyncRun run, List<DeferredIngest> deferred,
             CbomAssetSyncState claimedFrom) {
+        // Before the document read, not after it. A revision a later one has already ingested has nothing to
+        // contribute, and paying an HTTP read to find that out spends one of the run's max-ingest-documents slots and
+        // one of its ingestReads -- the figure settleUnreadable weighs its outage verdict on. A repository carrying
+        // many historical revisions is exactly the population this backlog pass exists for, so the budget would go on
+        // documents discarded on arrival. It also settles a superseded revision whose old document has since been
+        // removed upstream, which the read would otherwise report as a 404 failure retried for ever.
+        final Optional<CbomAssetIngestService.IngestOutcome> settled = assetIngestService
+                .settleWithoutReading(cbom.getUuid());
+        if (settled.isPresent()) {
+            countIngest(settled.get(), run);
+            return;
+        }
         final BomResponseDto document;
         try {
             document = read(cbom.getSerialNumber(), cbom.getVersion());

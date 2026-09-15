@@ -30,9 +30,16 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
     boolean existsBySerialNumberAndVersion(String serialNumber, int version);
 
     /**
-     * The earlier versions of the same serial number, oldest first -- the rows whose cryptographic asset links the
-     * version identified by {@code uuid} supersedes. Every version keeps its own row, so without this an asset a
-     * document stopped naming would go on being sourced by the revision that last named it.
+     * The earlier versions of the same serial number that still source something, oldest first -- the rows whose
+     * cryptographic asset links the version identified by {@code uuid} supersedes. Every version keeps its own row, so
+     * without this an asset a document stopped naming would go on being sourced by the revision that last named it.
+     *
+     * <p>
+     * Narrowed to revisions that still have links, because a serial number accumulates revisions for ever and each one
+     * returned here costs the withdrawal a {@code findAssetUuidsByCbomUuid} of its own. A revision withdrawn the first
+     * time it was superseded has nothing left to give back, and on a serial's fortieth ingest that would be thirty-nine
+     * queries guaranteed to answer nothing, repeated on every re-ingest and every retry. The {@code EXISTS} is one
+     * indexed probe served by {@code idx_crypto_asset_source_cbom}, which leads with {@code cbom_uuid}.
      */
     @Query("""
             SELECT older.uuid
@@ -40,14 +47,24 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
             JOIN Cbom older
                 ON older.serialNumber = self.serialNumber
             WHERE self.uuid = :uuid AND older.version < self.version
+              AND EXISTS (SELECT 1 FROM CryptoAssetSource s WHERE s.cbomUuid = older.uuid)
             ORDER BY older.version
             """)
     List<UUID> findSupersededVersionUuids(@Param("uuid") UUID uuid);
 
     /**
-     * Whether a later version of the same serial number is already stored. Such a document is obsolete on arrival:
-     * ingesting it would attach the inventory to a revision another row supersedes, and the next run would detach it
-     * again.
+     * Whether a later version of the same serial number has itself been ingested. Such a document is obsolete on
+     * arrival: ingesting it would attach the inventory to a revision another row already speaks for, and that row's own
+     * ingest withdrew this one's links when it ran.
+     *
+     * <p>
+     * <b>Ingested, not merely stored.</b> The write-off this answers is irreversible -- nothing in this application
+     * ever moves a row from {@code SYNCED} back to {@code PENDING} -- so it has to be earned by the newer revision
+     * actually contributing, not by its header row existing. After the upgrade that introduced the column every
+     * pre-existing row defaults to {@code PENDING}, which means a serial's revisions are commonly all unsynced at once:
+     * writing the older ones off against a newer row whose document turns out to be unreadable would leave the serial
+     * number contributing nothing at all, where before it contributed a stale-but-present inventory. The withdrawal
+     * half of supersession is already driven by a successful ingest, and this is the same test on the other half.
      */
     @Query("""
             SELECT COUNT(newer) > 0
@@ -55,8 +72,14 @@ public interface CbomRepository extends SecurityFilterRepository<Cbom, UUID> {
             JOIN Cbom newer
                 ON newer.serialNumber = self.serialNumber
             WHERE self.uuid = :uuid AND newer.version > self.version
+              AND newer.assetSyncState = :ingested
             """)
-    boolean hasLaterVersion(@Param("uuid") UUID uuid);
+    boolean hasIngestedLaterVersion(@Param("uuid") UUID uuid, @Param("ingested") CbomAssetSyncState ingested);
+
+    /** {@link #hasIngestedLaterVersion(UUID, CbomAssetSyncState)}, with the one state that counts as ingested. */
+    default boolean hasIngestedLaterVersion(UUID uuid) {
+        return hasIngestedLaterVersion(uuid, CbomAssetSyncState.SYNCED);
+    }
 
     @Query("SELECT c.uuid FROM Cbom c WHERE c.uuid IN :uuids")
     Set<UUID> findExistingUuids(@Param("uuids") List<UUID> uuids);
