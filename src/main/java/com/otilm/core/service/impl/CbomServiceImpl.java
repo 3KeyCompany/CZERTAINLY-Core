@@ -30,6 +30,7 @@ import com.otilm.core.attribute.engine.AttributeEngine.CustomAttributeContentFil
 import com.otilm.core.attribute.engine.ListingSortResolver;
 import com.otilm.core.cbom.client.BomSearchPage;
 import com.otilm.core.cbom.client.CbomRepositoryClient;
+import com.otilm.core.cbom.ingest.CbomAssetIngestService;
 import com.otilm.core.comparator.SearchFieldDataComparator;
 import com.otilm.core.config.CbomSyncProperties;
 import com.otilm.core.dao.CryptoAssetConstraintTranslator;
@@ -57,6 +58,7 @@ import com.otilm.core.security.authz.SecuredUUID;
 import com.otilm.core.security.authz.SecurityFilter;
 import com.otilm.core.service.CbomExternalService;
 import com.otilm.core.service.CbomInternalService;
+import com.otilm.core.service.writer.cbom.CbomAssetSyncStateWriter;
 import com.otilm.core.service.writer.cbom.CbomSyncSkipWriter;
 import com.otilm.core.tasks.CbomSyncTask;
 import com.otilm.core.util.CbomUtil;
@@ -72,6 +74,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,11 +83,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.function.TriFunction;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -98,6 +103,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CbomServiceImpl implements CbomExternalService, CbomInternalService {
 
     private static final LoggerWrapper logger = new LoggerWrapper(CbomServiceImpl.class, Module.CORE, Resource.CBOM);
+
+    /** Ingest states a later run may take over once the row has been untouched long enough. */
+    private static final Set<CbomAssetSyncState> INGEST_RETRY_STATES = EnumSet
+            .of(CbomAssetSyncState.IN_PROGRESS, CbomAssetSyncState.FAILED);
 
     /** Feed entries with this version are the original upload, never a re-synced revision; the sync ignores them. */
     private static final String ORIGINAL_VERSION = "original";
@@ -134,6 +143,10 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     private CbomSyncSkipWriter syncSkipWriter;
 
     private CbomSyncSkipRepository syncSkipRepository;
+
+    private CbomAssetIngestService assetIngestService;
+
+    private CbomAssetSyncStateWriter assetSyncStateWriter;
 
     @Autowired
     public void setCbomRepository(CbomRepository cbomRepository) {
@@ -178,6 +191,16 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     @Autowired
     public void setSyncSkipWriter(CbomSyncSkipWriter syncSkipWriter) {
         this.syncSkipWriter = syncSkipWriter;
+    }
+
+    @Autowired
+    public void setAssetIngestService(CbomAssetIngestService assetIngestService) {
+        this.assetIngestService = assetIngestService;
+    }
+
+    @Autowired
+    public void setAssetSyncStateWriter(CbomAssetSyncStateWriter assetSyncStateWriter) {
+        this.assetSyncStateWriter = assetSyncStateWriter;
     }
 
     @Autowired
@@ -535,6 +558,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         readFeed(run, skips);
         retrySkipped(run, skips);
         settleUnavailable(run);
+        ingestPending(run);
 
         final String syncResultMessage = run.summary();
         logger.getLogger().info("CBOM Sync: finished. {}", syncResultMessage);
@@ -751,10 +775,11 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         }
 
         final AtomicBoolean isDuplicate = new AtomicBoolean(false);
+        final AtomicReference<UUID> storedUuid = new AtomicReference<>();
         try {
             transactionHandler.runInNewTransaction(() -> {
                 try {
-                    createCbomEntry(identity, counts, document);
+                    storedUuid.set(createCbomEntry(identity, counts, document));
                 } catch (AlreadyExistException e) {
                     // Pre-check duplicate: no DB operation occurred, transaction is healthy.
                     // AlreadyExistException is checked so it cannot cross the Runnable boundary;
@@ -791,7 +816,37 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                             identity.serialNumber(), identity.version(), e);
             return StoreOutcome.failed("storing the CBOM row failed unexpectedly (see the Core log)");
         }
-        return isDuplicate.get() ? StoreOutcome.DUPLICATE : StoreOutcome.STORED;
+        if (isDuplicate.get()) {
+            return StoreOutcome.DUPLICATE;
+        }
+        ingestInline(storedUuid.get(), document, run);
+        return StoreOutcome.STORED;
+    }
+
+    /**
+     * Ingests the assets of a document the run has just stored, with the document already in hand rather than left to
+     * {@link #ingestPending}, which would re-read it.
+     *
+     * <p>
+     * A failure here is the CBOM's ingest state to record, never the header's: the row is stored either way, and the
+     * run's own counters carry what the ingest did. That is also why nothing is allowed out of this method.
+     * {@link #store} promises never to throw for one entry's failure, and the ingest's own state writes are not
+     * exception-safe -- a lock that could not be acquired or a connection that dropped while it marked the row would
+     * otherwise abandon the remaining feed pages, skip {@link #settleUnavailable} so that every entry already deferred
+     * got no skip record at all, skip the backlog pass, and leave the watermark to re-read the whole window next run.
+     */
+    private void ingestInline(UUID cbomUuid, Map<String, Object> document, SyncRun run) {
+        if (!syncProperties.assetIngestEnabled()) {
+            return;
+        }
+        try {
+            countIngest(assetIngestService.ingest(cbomUuid, document, run.startedAt), run);
+        } catch (RuntimeException e) {
+            logger
+                    .getLogger()
+                    .warn("CBOM asset ingest: CBOM {}: the ingest failed outside its own error handling", cbomUuid, e);
+            run.ingestFailed++;
+        }
     }
 
     /**
@@ -941,7 +996,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         return Math.max(0L, Math.floorDiv(lastSuccessfulRunStart.getTime(), 1000L) - overlap.toSeconds());
     }
 
-    private void createCbomEntry(SyncIdentity identity, CbomHeaderCounts counts, BomResponseDto response)
+    private UUID createCbomEntry(SyncIdentity identity, CbomHeaderCounts counts, BomResponseDto response)
             throws AlreadyExistException {
         if (cbomRepository.existsBySerialNumberAndVersion(identity.serialNumber(), identity.version())) {
             throw new AlreadyExistException("CBOM with serialNumber %s and version %s already exists"
@@ -964,7 +1019,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         // transaction is not left rollback-only when caught inside the Runnable boundary.
         // The sync loop catches it and counts it as a duplicate when the violated constraint is the
         // (serialNumber, version) uniqueness; any other constraint is recorded for retry.
-        cbomRepository.save(cbom);
+        return cbomRepository.save(cbom).getUuid();
     }
 
     public boolean isCbomRepositoryClientConfigured() {
@@ -1034,6 +1089,195 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
     }
 
     /** Counters of one run and the identities it has already tried, so the retry phase does not try them twice. */
+
+    /**
+     * Ingests the cryptographic assets of the CBOMs that still owe one, bounded by
+     * {@code cbom.sync.max-ingest-documents}.
+     *
+     * <p>
+     * The feed pass cannot do this on its own. It skips every entry whose header row already exists, which is exactly
+     * what a crashed ingest, an earlier failure and a CBOM uploaded through Core's own API all leave behind -- so
+     * without this pass those assets would never be ingested at all, and the epic's resumability requirement would have
+     * nothing to resume.
+     *
+     * <p>
+     * Each document is read outside any transaction, then handed to the ingest as a value: the cluster lock the ingest
+     * holds must never span an HTTP call.
+     */
+    private void ingestPending(SyncRun run) {
+        if (!syncProperties.assetIngestEnabled() || syncProperties.maxIngestDocuments() == 0) {
+            return;
+        }
+        final int budget = syncProperties.maxIngestDocuments();
+        final List<Cbom> workList = new ArrayList<>(
+                cbomRepository.findPendingAssetIngests(CbomAssetSyncState.PENDING, Limit.of(budget)));
+        if (workList.size() < budget) {
+            final OffsetDateTime retryBefore = run.startedAt.minus(syncProperties.ingestRetryAfter());
+            workList
+                    .addAll(cbomRepository
+                            .findAssetIngestRetries(INGEST_RETRY_STATES, retryBefore,
+                                    Limit.of(budget - workList.size())));
+        }
+        final List<DeferredIngest> deferred = new ArrayList<>();
+        final int readsBefore = run.ingestReads;
+        for (Cbom cbom : workList) {
+            // Per entry, for the reason ingestInline gives: one document's database hiccup must not abandon the
+            // backlog, and every write below -- the claim, the failure records, settleUnreadable's own -- can throw.
+            try {
+                final CbomAssetSyncState claimedFrom = cbom.getAssetSyncState();
+                if (!claimed(cbom)) {
+                    run.ingestLockedElsewhere++;
+                    continue;
+                }
+                ingestOnePending(cbom, run, deferred, claimedFrom);
+            } catch (RuntimeException e) {
+                logger
+                        .getLogger()
+                        .warn("CBOM asset ingest: CBOM serialNumber {} version {}: the ingest failed outside its own error handling",
+                                cbom.getSerialNumber(), cbom.getVersion(), e);
+                run.ingestFailed++;
+            }
+        }
+        try {
+            settleUnreadable(deferred, run, run.ingestReads > readsBefore);
+        } catch (RuntimeException e) {
+            logger.getLogger().warn("CBOM asset ingest: settling the unreadable documents of this run failed", e);
+        }
+    }
+
+    /**
+     * Whether this run may work the CBOM, or another node claimed it between the work list and here.
+     *
+     * <p>
+     * Taken before the document is read, which is the point: the list is a plain read, so every node's hourly job
+     * selects the same rows, and without a claim each one spends the same HTTP document read and the same extraction
+     * before the cluster lock serialises the first write. The writes themselves converge -- every one is an idempotent
+     * upsert -- so what this saves is load on the CBOM repository, at its worst exactly when a backlog is being worked
+     * down.
+     */
+    private boolean claimed(Cbom cbom) {
+        if (assetSyncStateWriter
+                .claimForIngest(cbom.getUuid(), cbom.getAssetSyncState(), cbom.getAssetSyncAttemptedAt()) > 0) {
+            return true;
+        }
+        logger
+                .getLogger()
+                .debug("CBOM asset ingest: CBOM serialNumber {} version {} was claimed by another node; leaving it",
+                        cbom.getSerialNumber(), cbom.getVersion());
+        return false;
+    }
+
+    /**
+     * Decides what the documents Core never got an answer for were: each document's own failure, or the repository's.
+     *
+     * <p>
+     * The same question the header pass answers in {@link #settleUnavailable}, and it has to be answered again here
+     * because that one cannot see this pass: it returns at once when the feed deferred nothing, which is the ordinary
+     * state of a run whose watermark has caught up -- exactly the run that works a backlog down. Charging a repository
+     * outage to the documents would rewrite the whole pending backlog as FAILED, at the run's budget per hour, each row
+     * carrying a sentence that is not about it.
+     *
+     * <p>
+     * So the verdict is the header pass's: an outage only when nothing proves the repository serves documents at all --
+     * no read of this pass succeeded and at least two failed that way. A single unreadable document among no successes
+     * is charged to it, because one hanging document must never hold the pass.
+     */
+    private void settleUnreadable(List<DeferredIngest> deferred, SyncRun run, boolean anyReadSucceeded) {
+        if (deferred.isEmpty()) {
+            return;
+        }
+        if (!anyReadSucceeded && deferred.size() >= 2) {
+            logger
+                    .getLogger()
+                    .warn("CBOM asset ingest: the CBOM Repository answered no document read of this run ({} documents); leaving them for a later run",
+                            deferred.size());
+            // The claims bought nothing, so they are given back: a row left IN_PROGRESS by an outage claims work no
+            // node is doing, and it would wait out cbom.sync.ingest-retry-after instead of being offered again at
+            // once.
+            deferred.forEach(entry -> assetSyncStateWriter.releaseClaim(entry.cbom().getUuid(), entry.claimedFrom()));
+            return;
+        }
+        for (DeferredIngest entry : deferred) {
+            assetSyncStateWriter
+                    .markFailed(entry.cbom().getUuid(),
+                            "the document could not be read from the CBOM Repository (see the Core log)");
+        }
+    }
+
+    /** One CBOM whose document read got no answer, with the state its claim overwrote. */
+    private record DeferredIngest(Cbom cbom, CbomAssetSyncState claimedFrom) {
+    }
+
+    /**
+     * One CBOM from the work list: re-read its document, then ingest it.
+     *
+     * <p>
+     * A read that fails for a reason of this document's own records the failure on the row rather than leaving it
+     * untouched. An untouched row keeps the state and the attempt timestamp the work list selects on, so it would be
+     * offered again at the same position on every run, spending one of the run's budget slots for ever and never
+     * reporting why -- and {@code PENDING} is the list a CBOM uploaded through Core's own API sits in.
+     *
+     * <p>
+     * A read that got no answer at all is not this document's failure to own: the repository answers 503 when it is
+     * unavailable as a whole, and the client synthesizes one for a refused connection or a response that timed out.
+     * Those are deferred to {@link #settleUnreadable}, which decides between the document and the repository once the
+     * pass is done.
+     */
+    private void ingestOnePending(Cbom cbom, SyncRun run, List<DeferredIngest> deferred,
+            CbomAssetSyncState claimedFrom) {
+        final BomResponseDto document;
+        try {
+            document = read(cbom.getSerialNumber(), cbom.getVersion());
+            run.ingestReads++;
+        } catch (NotFoundException e) {
+            assetSyncStateWriter
+                    .markFailed(cbom.getUuid(), "the document is no longer in the CBOM Repository (HTTP 404)");
+            run.ingestFailed++;
+            return;
+        } catch (CbomRepositoryException e) {
+            logger
+                    .getLogger()
+                    .warn("CBOM asset ingest: CBOM serialNumber {} version {}: the document could not be re-read",
+                            cbom.getSerialNumber(), cbom.getVersion(), e);
+            run.ingestUnavailable++;
+            if (unavailableAsAWhole(e)) {
+                deferred.add(new DeferredIngest(cbom, claimedFrom));
+            } else {
+                assetSyncStateWriter
+                        .markFailed(cbom.getUuid(), "the CBOM Repository refused the document read (see the Core log)");
+            }
+            return;
+        } catch (Exception e) {
+            logger
+                    .getLogger()
+                    .warn("CBOM asset ingest: CBOM serialNumber {} version {}: reading the document failed",
+                            cbom.getSerialNumber(), cbom.getVersion(), e);
+            run.ingestUnavailable++;
+            assetSyncStateWriter.markFailed(cbom.getUuid(), "the document could not be read (see the Core log)");
+            return;
+        }
+        countIngest(assetIngestService.ingest(cbom.getUuid(), document, run.startedAt), run);
+    }
+
+    /** Whether the repository said nothing about this document in particular -- see {@link #store}'s same reading. */
+    private static boolean unavailableAsAWhole(CbomRepositoryException e) {
+        return e.getProblemDetail() == null
+                || e.getProblemDetail().getStatus() == HttpStatus.SERVICE_UNAVAILABLE.value();
+    }
+
+    private void countIngest(CbomAssetIngestService.IngestOutcome outcome, SyncRun run) {
+        switch (outcome) {
+            case INGESTED -> run.ingested++;
+            case REFUSED -> run.ingestRefused++;
+            case FAILED -> run.ingestFailed++;
+            case LOCKED_ELSEWHERE -> run.ingestLockedElsewhere++;
+            // Nothing happened and nothing was left owing, so there is nothing for the run report to say. Both passes
+            // return before reaching the ingest when the switch is off; this arm is what keeps a future caller that
+            // does not from being counted as a failure.
+            case DISABLED -> logger.getLogger().trace("CBOM asset ingest is disabled");
+        }
+    }
+
     private static final class SyncRun {
         final OffsetDateTime startedAt;
         final int maxAttempts;
@@ -1054,6 +1298,16 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         int permanentlySkipped;
         int alreadyPermanent;
         int successfulReads;
+        int ingested;
+        int ingestRefused;
+        int ingestFailed;
+        int ingestLockedElsewhere;
+        int ingestUnavailable;
+        /**
+         * Document reads of the ingest pass that the repository answered, which is what tells an outage from a
+         * document.
+         */
+        int ingestReads;
 
         SyncRun(OffsetDateTime startedAt, int maxAttempts) {
             this.startedAt = startedAt;
@@ -1066,7 +1320,9 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                     + "retried %d previously skipped entries, %d skip records resolved; %d entries are now permanently skipped; "
                     + "%d offers of permanently skipped entries failed again")
                     .formatted(read, pages, stored, duplicates, originals, invalid, recordedForRetry, retried, resolved,
-                            permanentlySkipped, alreadyPermanent);
+                            permanentlySkipped, alreadyPermanent)
+                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d documents could not be re-read"
+                            .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestUnavailable);
         }
     }
 }
