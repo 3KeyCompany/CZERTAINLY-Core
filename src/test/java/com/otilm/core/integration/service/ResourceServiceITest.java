@@ -352,19 +352,6 @@ class ResourceServiceITest extends BaseSpringBootTest {
                         "Filter fields list should not be empty for resource: " + Resource.CERTIFICATE);
     }
 
-    /**
-     * Every resource that declares filter fields must actually be servable by this endpoint, not just by the predicate
-     * builder. The two ways a field reaches this endpoint disagree about what counts as a list: the caller routes on
-     * {@code SearchFieldTypeEnum}, while the value handling switches on {@code FilterFieldType}, and
-     * {@code NATIVE_ARRAY} is a list under the second but not the first. A resource carrying such a field returned HTTP
-     * 500 to any authenticated caller -- {@code Resource.OID} and {@code Resource.TIME_QUALITY_CONFIGURATION} both did,
-     * and neither was covered.
-     *
-     * <p>
-     * Covering only two hand-picked resources let that ship. Iterating them all turns the whole class of omission --
-     * this mismatch, a missing {@code ResourceToClass} constant, or the next one -- into a build failure, which is why
-     * this asserts nothing about the cause.
-     */
     @Test
     void commentHostResourceOffersOnlyTheCommentableResources() throws NotFoundException {
         Object[] offered = offeredValues(Resource.COMMENT, FilterField.COMMENT_HOST_RESOURCE);
@@ -375,7 +362,6 @@ class ResourceServiceITest extends BaseSpringBootTest {
 
     @Test
     void resourceFieldsOfferNoWildcardsARecordCannotCarry() throws NotFoundException {
-        // Module-level operations are audited with resource NONE, so that one stays; ANY scopes grants only
         assertThat(offeredValues(Resource.AUDIT_LOG, FilterField.AUDIT_LOG_RESOURCE))
                 .contains(Resource.NONE, Resource.CERTIFICATE)
                 .doesNotContain(Resource.ANY);
@@ -398,6 +384,19 @@ class ResourceServiceITest extends BaseSpringBootTest {
         return (Object[]) data.getValue();
     }
 
+    /**
+     * Every resource that declares filter fields must actually be servable by this endpoint, not just by the predicate
+     * builder. The two ways a field reaches this endpoint disagree about what counts as a list: the caller routes on
+     * {@code SearchFieldTypeEnum}, while the value handling switches on {@code FilterFieldType}, and
+     * {@code NATIVE_ARRAY} is a list under the second but not the first. A resource carrying such a field returned HTTP
+     * 500 to any authenticated caller -- {@code Resource.OID} and {@code Resource.TIME_QUALITY_CONFIGURATION} both did,
+     * and neither was covered.
+     *
+     * <p>
+     * Covering only two hand-picked resources let that ship. Iterating them all turns the whole class of omission --
+     * this mismatch, a missing {@code ResourceToClass} constant, or the next one -- into a build failure, which is why
+     * this asserts nothing about the cause.
+     */
     @Test
     void everyResourceWithFilterFieldsCanBeListed() {
         List<Resource> declared = Arrays

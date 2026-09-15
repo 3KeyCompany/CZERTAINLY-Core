@@ -285,7 +285,8 @@ public enum FilterField {
     AUDIT_LOG_ACTOR_NAME(Resource.AUDIT_LOG, null, null, AuditLog_.actorName, "Actor name", SearchFieldTypeEnum.STRING),
     AUDIT_LOG_ACTOR_AUTH_METHOD(Resource.AUDIT_LOG, null, null, AuditLog_.actorAuthMethod, "Actor Auth method",
             SearchFieldTypeEnum.LIST, AuthMethod.class),
-    // NONE is a recorded resource for module-level operations; an absent affiliated resource is stored as no value
+    // ANY scopes grants and is never recorded; NONE is recorded for module-level operations, so the resource field
+    // keeps it, while an absent affiliated resource is stored as no value rather than NONE
     AUDIT_LOG_RESOURCE(Resource.AUDIT_LOG, null, null, AuditLog_.resource, "Resource", SearchFieldTypeEnum.LIST,
             Resource.class, resourcesExcept(Resource.ANY)),
     AUDIT_LOG_AFFILIATED_RESOURCE(Resource.AUDIT_LOG, null, null, AuditLog_.affiliatedResource, "Affiliated resource",
@@ -319,6 +320,7 @@ public enum FilterField {
             SearchFieldTypeEnum.LIST),
 
     // Approval
+    // An approval is always for a concrete resource; the wildcards scope grants only
     APPROVAL_RESOURCE(Resource.APPROVAL, null, null, Approval_.resource, "Resource", SearchFieldTypeEnum.LIST,
             Resource.class, resourcesExcept(Resource.NONE, Resource.ANY)),
     APPROVAL_ACTION(Resource.APPROVAL, null, null, Approval_.action, "Action", SearchFieldTypeEnum.LIST,
@@ -564,7 +566,7 @@ public enum FilterField {
         return enumValues != null ? enumValues : enumClass.getEnumConstants();
     }
 
-    /** Every resource but the given wildcards, which scope a grant and are never the resource of a stored record. */
+    /** Every resource but the given ones. */
     private static Set<Resource> resourcesExcept(Resource first, Resource... rest) {
         return EnumSet.complementOf(EnumSet.of(first, rest));
     }

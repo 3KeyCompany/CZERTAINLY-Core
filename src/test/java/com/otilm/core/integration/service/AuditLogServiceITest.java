@@ -101,7 +101,6 @@ class AuditLogServiceITest extends BaseSpringBootTest {
                 .flatMap(group -> group.getSearchFieldData().stream())
                 .toList();
 
-        // Module-level operations are audited with resource NONE, so that one stays; ANY scopes grants only
         assertThat(codesOffered(fields, FilterField.AUDIT_LOG_RESOURCE))
                 .contains("NONE", "certificates")
                 .doesNotContain("ANY");
