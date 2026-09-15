@@ -103,6 +103,29 @@ public class CbomAssetSyncStateWriter {
     }
 
     /**
+     * Settles a revision a later one has taken the URN from: it owes no ingest, but it did not perform one either.
+     *
+     * <p>
+     * {@code SYNCED} with <b>no</b> {@code assets_synced_at} of its own, which is the difference from
+     * {@link #markSynced} and the point of having a second method. That column is not private bookkeeping: the
+     * cryptographic asset dashboard serves its maximum over every CBOM as "last completed sync at", the CBOM DTO serves
+     * it per row, and {@code CBOM_ASSETS_SYNCED_AT} offers it as a user-facing filter. Stamping it here would let a run
+     * that ingested nothing at all advance the dashboard's completion time, and would present a document sourcing no
+     * assets as one whose assets were just synced. A null parameter leaves the stored value alone (see
+     * {@link CbomRepository#updateAssetSyncState}), so a row that never synced keeps none and one that synced under an
+     * earlier revision keeps the time it really did.
+     *
+     * <p>
+     * What this state does <em>not</em> distinguish is a revision that contributed and one that was written off, both
+     * of which now read {@code SYNCED} while sourcing nothing. Telling them apart needs a state constant, and
+     * {@code CbomAssetSyncState} lives in the {@code interfaces} artifact -- recorded as open work on core#2073.
+     */
+    @Transactional
+    public int markSuperseded(UUID cbomUuid) {
+        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.SYNCED, null, null, null);
+    }
+
+    /**
      * Records a failed ingest attempt.
      *
      * <p>
