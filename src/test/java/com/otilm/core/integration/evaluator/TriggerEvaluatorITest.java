@@ -449,6 +449,30 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
         Assertions.assertFalse(reason.getMessage().contains("Cannot invoke"), reason.getMessage());
         condition.setValue("2019-12-01T22:10:00.274+00:00");
 
+        // An item without the property inside a joined collection is skipped the same way, and the other items decide
+        Group named = new Group();
+        named.setName("tst-group");
+        Group unnamed = new Group();
+        certificate.setGroups(new HashSet<>(List.of(named, unnamed)));
+        condition.setFieldIdentifier(FilterField.GROUP_NAME.name());
+        condition.setOperator(FilterConditionOperator.EQUALS);
+        condition.setValue(List.of("tst-group"));
+        Assertions
+                .assertTrue(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+        condition.setValue(List.of("other-group"));
+        Assertions
+                .assertFalse(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+        condition.setOperator(FilterConditionOperator.NOT_EQUALS);
+        Assertions
+                .assertTrue(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+        condition.setValue(List.of("tst-group"));
+        Assertions
+                .assertFalse(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+
         // The same holds for any other field type without a value
         certificate.setSerialNumber(null);
         condition.setFieldIdentifier(FilterField.SERIAL_NUMBER.name());
