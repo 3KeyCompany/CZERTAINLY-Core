@@ -15,10 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
  * leaves the next sync free to re-ingest the document.
  *
  * <p>
- * <b>No production caller yet.</b> The delete path must record a tombstone as it deletes, or the next sync finds the
- * document upstream, sees nothing in the live {@code cbom} table, and re-ingests exactly what an operator removed —
- * which is the scenario this table exists to prevent. That wiring arrives with the ingest ticket, alongside the source
- * detachment the RESTRICT foreign key requires.
+ * The delete path records one as it deletes, or the next sync finds the document upstream, sees nothing in the live
+ * {@code cbom} table, and re-ingests exactly what an operator removed — which is the scenario this table exists to
+ * prevent. {@code CbomServiceImpl} is the caller, and reads it back through
+ * {@code CbomTombstoneRepository.existsBySerialNumberAndVersion} before storing a feed entry.
  */
 @Service
 public class CbomTombstoneWriter {

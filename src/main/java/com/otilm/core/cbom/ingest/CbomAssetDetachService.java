@@ -43,11 +43,17 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>
  * <b>Why a batch may be abandoned, and what survives it.</b> Every batch takes
- * {@link CbomAssetIngestService#assetSyncLockKey(UUID) the withdrawn CBOM's asset-sync lock} and gives up when another
- * node holds it, exactly as ingest does -- the two paths write the same rows, and the lock is what keeps one node at a
- * time on them. The key is the document's, not the operation's, so a withdrawal and an unrelated document's ingest do
- * not contend; the pair that must exclude each other is this withdrawal and an ingest of the same CBOM, which share the
- * key.
+ * {@link CbomAssetIngestService#assetSyncLockKey(UUID) the withdrawn CBOM's asset-sync lock}, exactly as ingest does --
+ * the two paths write the same rows, and the lock is what keeps one node at a time on them. The key is the document's,
+ * not the operation's, so a withdrawal and an unrelated document's ingest do not contend; the pair that must exclude
+ * each other is this withdrawal and an ingest of the same CBOM, which share the key.
+ *
+ * <p>
+ * What a batch does when another node holds that key depends on what its caller was promised. A housekeeping withdrawal
+ * ({@link #withdraw(UUID)}) gives up, because its caller learns it from the return value and leaves the CBOM owing the
+ * work. A withdrawal whose caller was promised the outcome ({@link #withdrawWaiting(UUID)}) waits instead: an operator
+ * deleting a document is told it is gone, and skipping would turn that delete into a refusal for as long as another
+ * node happened to be syncing.
  *
  * <p>
  * Each batch commits in its own transaction, so giving up is <b>not</b> all-or-nothing: the batches that already
@@ -111,12 +117,48 @@ public class CbomAssetDetachService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Withdrawal withdraw(UUID cbomUuid) {
+        return withdrawInBatches(cbomUuid, Contention.SKIP);
+    }
+
+    /**
+     * Withdraws every link the given CBOM contributed, waiting for the cluster lock instead of leaving the work to
+     * whoever holds it.
+     *
+     * <p>
+     * For the caller that was promised the outcome: an operator deleting one CBOM is told the document is gone, and the
+     * deletion cannot proceed while the inventory still references it -- the foreign key is {@code RESTRICT}. A skipped
+     * withdrawal would turn the delete into a refusal for as long as another node happened to be syncing. Waiting is
+     * what makes {@link Withdrawal#complete()} true here by construction; the assertion below is the invariant, not a
+     * case the caller is expected to handle.
+     *
+     * <p>
+     * Blocking on that key carries a ranking obligation, and this is the only path that takes it blocking: the wait
+     * must be the <b>first</b> lock of its transaction, above {@code ALIAS_DECISION_LOCK} and above every
+     * {@code crypto_asset} row lock, so that a waiter holds nothing a holder could go on to want. See the lock ranking
+     * on {@link CbomAssetIngestService}.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Withdrawal withdrawWaiting(UUID cbomUuid) {
+        final Withdrawal withdrawn = withdrawInBatches(cbomUuid, Contention.WAIT);
+        if (!withdrawn.complete()) {
+            throw new IllegalStateException("A waiting withdrawal cannot be abandoned");
+        }
+        return withdrawn;
+    }
+
+    /** What a batch does when another node holds the withdrawn CBOM's asset-sync lock. */
+    private enum Contention {
+        SKIP,
+        WAIT
+    }
+
+    private Withdrawal withdrawInBatches(UUID cbomUuid, Contention contention) {
         final List<UUID> assets = sourceRepository.findAssetUuidsByCbomUuid(cbomUuid);
         Withdrawal total = Withdrawal.NOTHING;
         for (int from = 0; from < assets.size(); from += batchSize) {
             final List<UUID> batch = assets.subList(from, Math.min(from + batchSize, assets.size()));
             final Withdrawal done = transactionHandler
-                    .runInNewTransaction(() -> withdrawBatchUnderClusterLock(cbomUuid, batch));
+                    .runInNewTransaction(() -> withdrawBatchUnderClusterLock(cbomUuid, batch, contention));
             if (done == null) {
                 return total.plus(Withdrawal.ABANDONED);
             }
@@ -126,8 +168,11 @@ public class CbomAssetDetachService {
     }
 
     /** One batch, inside the transaction that holds the cluster lock. Null when another node holds it. */
-    private Withdrawal withdrawBatchUnderClusterLock(UUID cbomUuid, List<UUID> assets) {
-        if (!clusterSynchronizer.tryLock(CbomAssetIngestService.assetSyncLockKey(cbomUuid))) {
+    private Withdrawal withdrawBatchUnderClusterLock(UUID cbomUuid, List<UUID> assets, Contention contention) {
+        final String lockKey = CbomAssetIngestService.assetSyncLockKey(cbomUuid);
+        if (contention == Contention.WAIT) {
+            clusterSynchronizer.lock(lockKey);
+        } else if (!clusterSynchronizer.tryLock(lockKey)) {
             return null;
         }
         // Before the first crypto_asset row lock, as on the ingest path: deleting an orphan deletes its aliases by

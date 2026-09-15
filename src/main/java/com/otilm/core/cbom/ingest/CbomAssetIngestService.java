@@ -69,9 +69,15 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>
  * <b>Lock ranking, third rank included.</b> The asset-sync lock is taken above {@code ALIAS_DECISION_LOCK}, which is
- * above every {@code crypto_asset} row lock. The asset-sync lock is only ever acquired with a non-blocking
- * {@code tryLock}, so a node that cannot get it abandons the batch rather than joining a wait chain; acquiring it with
- * a blocking call would close a cycle against any path that takes the two in the other order.
+ * above every {@code crypto_asset} row lock. On this path it is acquired with a non-blocking {@code tryLock}, so a node
+ * that cannot get it abandons the batch rather than joining a wait chain.
+ *
+ * <p>
+ * It may also be acquired <b>blocking</b> -- {@link CbomAssetDetachService#withdrawWaiting(UUID)} does, for a caller
+ * that was promised the outcome -- and what keeps that safe is the ranking, not the non-blocking call: the blocking
+ * acquisition is the <b>first</b> lock of its transaction, so the waiter holds nothing any holder could go on to want,
+ * and no cycle can close. A path that took {@code ALIAS_DECISION_LOCK} or a {@code crypto_asset} row lock and then
+ * waited on the asset-sync lock would close one; that is the thing this ranking forbids.
  */
 @Slf4j
 @Service

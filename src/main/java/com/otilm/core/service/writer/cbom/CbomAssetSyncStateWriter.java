@@ -126,6 +126,23 @@ public class CbomAssetSyncStateWriter {
     }
 
     /**
+     * Records a failed ingest over any state, {@code SYNCED} included.
+     *
+     * <p>
+     * For the one caller entitled to overrule a success: a deletion withdraws the CBOM's contribution to the inventory
+     * before removing the header, so a deletion that fails in between leaves a row that says SYNCED and sources
+     * nothing. The guard {@link #markFailed} applies is there to stop a stale run from overwriting another node's
+     * success; here the row genuinely is no longer ingested, and leaving it SYNCED would keep the backlog pass from
+     * ever rebuilding it.
+     *
+     * @param operatorSafeError see {@link #markFailed}
+     */
+    @Transactional
+    public int markFailedEvenIfSynced(UUID cbomUuid, String operatorSafeError) {
+        return cbomRepository.updateAssetSyncState(cbomUuid, CbomAssetSyncState.FAILED, operatorSafeError, null, null);
+    }
+
+    /**
      * Records a failed ingest attempt.
      *
      * <p>

@@ -445,41 +445,58 @@ class CryptoAssetInventoryITest extends BaseSpringBootTest {
         assertThat(cbomRepository.findById(leanCbom.getUuid())).isEmpty();
     }
 
+    /**
+     * What the RESTRICT foreign key used to refuse. The delete path withdraws the CBOM's contribution first, so the
+     * deletion goes through and takes the asset nothing sources any more with it.
+     */
     @Test
-    void theCbomDeleteServicePathRefusesWhileTheInventoryReferencesItAndForwardsNoDriverText() throws Exception {
+    void theCbomDeleteServicePathWithdrawsTheInventoryAndTombstonesTheDocument() throws Exception {
         UUID assetUuid = upsert(rsa2048(), null);
         sourceWriter
                 .upsertSource(assetUuid, leanCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
                         OffsetDateTime.now());
-        String identityKey = asset(assetUuid).getIdentityKey();
 
-        ValidationException refusal = org.junit.jupiter.api.Assertions
-                .assertThrows(ValidationException.class, () -> cbomService.deleteCbom(leanCbom.getUuid()));
+        cbomService.deleteCbom(leanCbom.getUuid());
 
-        assertThat(refusal.getMessage()).contains("still referenced by the cryptographic asset inventory");
-        assertLeaksNothing(refusal.getMessage(), identityKey);
-
-        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(leanCbom.getUuid()));
-
-        assertThat(messages).singleElement().satisfies(message -> {
-            assertThat(message.getMessage()).contains("still referenced by the cryptographic asset inventory");
-            assertLeaksNothing(message.getMessage(), identityKey);
-        });
-        assertThat(cbomRepository.findById(leanCbom.getUuid()))
-                .describedAs("a refused deletion leaves the row where it was")
+        assertThat(cbomRepository.findById(leanCbom.getUuid())).isEmpty();
+        assertThat(assetRepository.findById(assetUuid)).describedAs("its last source went with the document").isEmpty();
+        assertThat(tombstoneRepository.findById(leanCbom.getUuid()))
+                .describedAs("the next sync is told not to store it again")
                 .isPresent();
     }
 
-    private void assertLeaksNothing(String text, String identityKey) {
-        assertThat(text)
-                .describedAs("the driver's DETAIL line quotes the failing row, and for crypto_asset that row carries "
-                        + "the identity key")
-                .doesNotContain("Detail")
-                .doesNotContain("DETAIL")
-                .doesNotContain("detail")
-                .doesNotContain(identityKey)
-                .doesNotContain(leanCbom.getUuid().toString())
-                .doesNotContain("crypto_asset_source");
+    @Test
+    void theBulkDeletePathWithdrawsTheInventoryTheSameWay() {
+        UUID assetUuid = upsert(rsa2048(), null);
+        sourceWriter
+                .upsertSource(assetUuid, leanCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
+                        OffsetDateTime.now());
+
+        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(leanCbom.getUuid()));
+
+        assertThat(messages).isEmpty();
+        assertThat(cbomRepository.findById(leanCbom.getUuid())).isEmpty();
+        assertThat(assetRepository.findById(assetUuid)).isEmpty();
+        assertThat(tombstoneRepository.existsBySerialNumberAndVersion("urn:uuid:lean", 1)).isTrue();
+    }
+
+    /**
+     * An asset another CBOM still names outlives the deletion, with the deleted document's contribution gone from its
+     * merged payload.
+     */
+    @Test
+    void anAssetAnotherCbomSourcesOutlivesTheDeletedOne() throws Exception {
+        UUID assetUuid = upsert(rsa2048(), null);
+        sourceWriter
+                .upsertSource(assetUuid, leanCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
+                        OffsetDateTime.now());
+        sourceWriter
+                .upsertSource(assetUuid, richCbom.getUuid(), Map.of("primitive", "signature"), List.of(),
+                        OffsetDateTime.now());
+
+        cbomService.deleteCbom(leanCbom.getUuid());
+
+        assertThat(asset(assetUuid).getSourceCount()).isEqualTo(1);
     }
 
     // ---- the alias table is invisible to identity ----

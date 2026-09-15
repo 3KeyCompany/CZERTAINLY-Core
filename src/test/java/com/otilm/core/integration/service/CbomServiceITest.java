@@ -25,6 +25,7 @@ import com.otilm.api.model.core.settings.SettingsSection;
 import com.otilm.api.model.core.settings.UtilsSettingsDto;
 import com.otilm.api.model.scheduler.SchedulerJobExecutionStatus;
 import com.otilm.core.attribute.engine.AttributeEngine;
+import com.otilm.core.cbom.ingest.CbomAssetDetachService;
 import com.otilm.core.dao.entity.Cbom;
 import com.otilm.core.dao.entity.ScheduledJob;
 import com.otilm.core.dao.entity.ScheduledJobHistory;
@@ -32,6 +33,7 @@ import com.otilm.core.dao.repository.CbomRepository;
 import com.otilm.core.dao.repository.ScheduledJobHistoryRepository;
 import com.otilm.core.dao.repository.ScheduledJobsRepository;
 import com.otilm.core.dao.repository.cbom.CbomSyncSkipRepository;
+import com.otilm.core.dao.repository.cbom.CbomTombstoneRepository;
 import com.otilm.core.dao.repository.cbom.CryptoAssetRepository;
 import com.otilm.core.dao.repository.cbom.CryptoAssetSourceRepository;
 import com.otilm.core.enums.FilterField;
@@ -131,6 +133,9 @@ class CbomServiceITest extends BaseSpringBootTest {
     private CbomSyncSkipRepository skipRepository;
 
     @Autowired
+    private CbomTombstoneRepository tombstoneRepository;
+
+    @Autowired
     private CryptoAssetRepository cryptoAssetRepository;
 
     @Autowired
@@ -151,6 +156,15 @@ class CbomServiceITest extends BaseSpringBootTest {
     @MockitoSpyBean
     private CbomRepository cbomRepositorySpy;
 
+    @MockitoSpyBean
+    private CbomAssetDetachService detachServiceSpy;
+
+    @MockitoSpyBean
+    private CbomTombstoneRepository tombstoneRepositorySpy;
+
+    @MockitoSpyBean
+    private CbomAssetSyncStateWriter syncStateWriterSpy;
+
     private WireMockServer mockServer;
 
     @Autowired
@@ -169,6 +183,7 @@ class CbomServiceITest extends BaseSpringBootTest {
         cryptoAssetSourceRepository.deleteAll();
         cryptoAssetRepository.deleteAll();
         cbomRepository.deleteAll();
+        tombstoneRepository.deleteAll();
         scheduledJobHistoryRepository.deleteAll();
         scheduledJobsRepository.deleteAll();
 
@@ -1548,6 +1563,95 @@ class CbomServiceITest extends BaseSpringBootTest {
         assertTrue(result.contains("stored 0 new entries"));
     }
 
+    /**
+     * The repository goes on offering a document an operator deleted here -- deletion in Core is not deletion there --
+     * so without the tombstone every run would store it again, and the next ingest would rebuild the inventory behind
+     * it.
+     */
+    @Test
+    void sync_doesNotStoreAgainWhatAnOperatorDeleted() throws Exception {
+        String serialNumber = "serial-tombstoned";
+        Cbom deleted = new Cbom();
+        deleted.setSerialNumber(serialNumber);
+        deleted.setVersion(1);
+        deleted.setSpecVersion("1.6");
+        cbomService.deleteCbom(cbomRepository.save(deleted).getUuid());
+
+        BomEntryDto entry = entry(serialNumber, "1", OffsetDateTime.now());
+        mockSearchResponse(List.of(entry));
+        mockEntrySpecVersionSource(entry, "1.6", "source");
+
+        String result = cbomInternalService.sync();
+
+        assertTrue(result.contains("stored 0 new entries"));
+        assertTrue(result.contains("1 entries an operator had deleted were not stored again"));
+        assertTrue(cbomRepository.findAll().isEmpty());
+    }
+
+    /**
+     * A skip recorded for an identity an operator has since deleted is resolved by the feed pass itself. It cannot be
+     * left to the retry pass: the feed pass puts the identity in the run's attempted set before it tests the tombstone,
+     * and the retry pass returns for anything already attempted -- so its own tombstone branch is never reached. The
+     * repository goes on offering a deleted document every run, so the skip would sit RETRYING for ever.
+     */
+    @Test
+    void sync_resolvesTheSkipOfAnEntryAnOperatorHasSinceDeleted() throws Exception {
+        String serialNumber = "serial-skip-then-deleted";
+        BomEntryDto entry = entry(serialNumber, "1", OffsetDateTime.now());
+        mockSearchResponse(List.of(entry));
+        mockServer
+                .stubFor(WireMock
+                        .get(WireMock.urlPathMatching("/api/v1/bom/" + serialNumber))
+                        .withQueryParam("version", WireMock.equalTo("1"))
+                        .willReturn(WireMock
+                                .aResponse()
+                                .withStatus(404)
+                                .withHeader("Content-Type", "application/problem+json")
+                                .withBody(
+                                        """
+                                                                                        {"type":"about:blank","title":"Not Found","status":404,\
+                                                "detail":"Requested CBOM not found"}
+                                                                                        """)));
+
+        cbomInternalService.sync();
+        assertEquals(1, skipRepository.count(), "the unreadable document is recorded for the bounded retry");
+
+        Cbom deleted = new Cbom();
+        deleted.setSerialNumber(serialNumber);
+        deleted.setVersion(1);
+        deleted.setSpecVersion("1.6");
+        cbomService.deleteCbom(cbomRepository.save(deleted).getUuid());
+
+        String result = cbomInternalService.sync();
+
+        assertTrue(result.contains("1 entries an operator had deleted were not stored again"));
+        assertEquals(0, skipRepository.count(), "nothing is owed for an entry an operator deleted");
+    }
+
+    /**
+     * The tombstone pre-check happens before the document is read, and that read is an HTTP call. An operator deleting
+     * the document while it is in flight would otherwise have it stored straight back under a uuid of its own -- the
+     * delete cannot remove a row that did not exist when it ran, and nothing else notices. So the tombstone is tested
+     * again inside the transaction that inserts.
+     */
+    @Test
+    void sync_doesNotStoreADocumentDeletedWhileItsDocumentWasBeingRead() throws Exception {
+        String serialNumber = "serial-deleted-mid-read";
+        BomEntryDto entry = entry(serialNumber, "1", OffsetDateTime.now());
+        mockSearchResponse(List.of(entry));
+        mockEntrySpecVersionSource(entry, "1.6", "source");
+
+        // false for the pre-check ahead of the read, true for the test inside the insert transaction: the operator's
+        // delete commits while the document is in flight.
+        doReturn(false, true).when(tombstoneRepositorySpy).existsBySerialNumberAndVersion(serialNumber, 1);
+
+        String result = cbomInternalService.sync();
+
+        assertTrue(result.contains("stored 0 new entries"));
+        assertTrue(result.contains("1 entries an operator had deleted were not stored again"));
+        assertTrue(cbomRepository.findAll().isEmpty());
+    }
+
     @Test
     void sync_shouldHandleDataIntegrityViolation_asAlreadyExist() throws Exception {
         // Race condition fallback: both existence checks pass (false),
@@ -1686,6 +1790,30 @@ class CbomServiceITest extends BaseSpringBootTest {
     }
 
     /**
+     * A withdrawal that threw withdrew nothing, so the row still says what it said. Recording "a deletion withdrew this
+     * CBOM's cryptographic assets" for it would flip a genuinely SYNCED row to FAILED carrying a sentence that is not
+     * true of it -- and CBOM_ASSET_SYNC_ERROR now makes that sentence searchable.
+     */
+    @Test
+    void testBulkDeleteCbom_withdrawalFailure_leavesTheRowsStateAlone() {
+        Cbom cbom = new Cbom();
+        cbom.setSerialNumber("urn:uuid:withdrawal-failure");
+        cbom.setVersion(1);
+        cbom.setSpecVersion("1.6");
+        cbom.setAssetSyncState(CbomAssetSyncState.SYNCED);
+        final UUID savedUuid = cbomRepository.save(cbom).getUuid();
+
+        doThrow(new RuntimeException("advisory lock error")).when(detachServiceSpy).withdrawWaiting(savedUuid);
+
+        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(savedUuid));
+
+        Assertions.assertEquals(1, messages.size());
+        Cbom untouched = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.SYNCED, untouched.getAssetSyncState());
+        Assertions.assertNull(untouched.getAssetSyncError());
+    }
+
+    /**
      * The backlog pass selects its work list with a plain read, so every node selects the same rows. The claim is what
      * stops the second one from spending the same HTTP document read. It is a compare-and-swap on what the work list
      * saw rather than a state allowlist, because an allowlist admitting IN_PROGRESS would let the loser through.
@@ -1720,13 +1848,80 @@ class CbomServiceITest extends BaseSpringBootTest {
         cbom = cbomRepository.save(cbom);
         final UUID savedUuid = cbom.getUuid();
 
-        doThrow(new RuntimeException("DB delete error")).when(cbomRepositorySpy).deleteById(savedUuid);
+        doThrow(new RuntimeException("DB delete error")).when(cbomRepositorySpy).delete(any(Cbom.class));
 
         List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(savedUuid));
 
         Assertions.assertEquals(1, messages.size());
         Assertions.assertEquals(savedUuid.toString(), messages.getFirst().getUuid());
         Assertions.assertNotNull(messages.getFirst().getMessage());
+        // The withdrawal ran before the header delete, so the row must owe an ingest rather than claim one.
+        Assertions
+                .assertEquals(CbomAssetSyncState.FAILED,
+                        cbomRepository.findById(savedUuid).orElseThrow().getAssetSyncState());
+    }
+
+    /**
+     * The one delete failure the row is not marked failed for. The withdrawal releases the asset-sync lock at every
+     * batch commit, so an ingest of the same document can re-attach sources before the header delete runs: the
+     * inventory's RESTRICT foreign key then refuses, and the row is genuinely sourced again. Marking it FAILED would
+     * force a re-ingest of a document nothing is wrong with, under a sentence -- the inventory was withdrawn -- that is
+     * no longer true of it.
+     */
+    @Test
+    void aDeleteTheInventoryRefusesLeavesTheRowSynced() {
+        Cbom cbom = new Cbom();
+        cbom.setSerialNumber("urn:uuid:re-attached-mid-delete");
+        cbom.setVersion(1);
+        cbom.setSpecVersion("1.6");
+        cbom.setAssetSyncState(CbomAssetSyncState.SYNCED);
+        final UUID savedUuid = cbomRepository.save(cbom).getUuid();
+
+        doThrow(constraintViolation("crypto_asset_source_to_cbom_key")).when(cbomRepositorySpy).delete(any(Cbom.class));
+
+        ValidationException refused = Assertions
+                .assertThrows(ValidationException.class, () -> cbomService.deleteCbom(savedUuid));
+        assertTrue(refused.getMessage().contains("still referenced by the cryptographic asset inventory"),
+                "the operator is told what refused it, in text this platform shaped");
+
+        Cbom untouched = cbomRepository.findById(savedUuid).orElseThrow();
+        Assertions.assertEquals(CbomAssetSyncState.SYNCED, untouched.getAssetSyncState());
+        Assertions.assertNull(untouched.getAssetSyncError());
+    }
+
+    /**
+     * The write that records "withdrawn but still here" runs against a database that has just failed, so it is the most
+     * likely of all to fail too. Unguarded it would throw out of the loop: every uuid after the failing one goes
+     * unattempted, the deletions already committed are reported nowhere, and the caller gets a bare 500 instead of the
+     * per-entry list this method's contract is.
+     */
+    @Test
+    void aBulkDeleteWhoseFailureRecordFailsStillAttemptsTheRestOfTheList() {
+        final UUID first = savedCbom("urn:uuid:recovery-write-fails-1");
+        final UUID second = savedCbom("urn:uuid:recovery-write-fails-2");
+
+        doThrow(new RuntimeException("DB delete error")).when(cbomRepositorySpy).delete(any(Cbom.class));
+        doThrow(new RuntimeException("the connection was lost"))
+                .when(syncStateWriterSpy)
+                .markFailedEvenIfSynced(any(), any());
+
+        List<BulkActionMessageDto> messages = cbomService.bulkDeleteCbom(List.of(first, second));
+
+        Assertions
+                .assertEquals(2, messages.size(),
+                        "the second entry is attempted even though the first's record failed");
+        Assertions
+                .assertEquals(List.of(first.toString(), second.toString()),
+                        messages.stream().map(BulkActionMessageDto::getUuid).toList());
+    }
+
+    private UUID savedCbom(String serialNumber) {
+        Cbom cbom = new Cbom();
+        cbom.setSerialNumber(serialNumber);
+        cbom.setVersion(1);
+        cbom.setSpecVersion("1.6");
+        cbom.setAssetSyncState(CbomAssetSyncState.SYNCED);
+        return cbomRepository.save(cbom).getUuid();
     }
 
     // ---------------------------------------------------------------- cryptographic-asset ingest

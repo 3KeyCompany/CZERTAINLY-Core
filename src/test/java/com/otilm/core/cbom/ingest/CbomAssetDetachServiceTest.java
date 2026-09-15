@@ -178,6 +178,18 @@ class CbomAssetDetachServiceTest {
         verify(assetWriter, never()).delete(any());
     }
 
+    /** The keyed caller waits instead of skipping, or another node's sync would read as a refused deletion. */
+    @Test
+    void anOperatorsDeleteWaitsForTheClusterLockRatherThanSkippingTheWithdrawal() {
+        UUID asset = sourcedAsset();
+
+        service(100).withdrawWaiting(CBOM);
+
+        verify(synchronizer).lock(CbomAssetIngestService.assetSyncLockKey(CBOM));
+        verify(synchronizer, never()).tryLock(anyString());
+        verify(sourceWriter).detachCbom(asset, CBOM);
+    }
+
     private UUID sourcedAsset() {
         UUID asset = UUID.randomUUID();
         when(sourceRepository.findAssetUuidsByCbomUuid(CBOM)).thenReturn(List.of(asset));
