@@ -1225,6 +1225,18 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
      */
     private void ingestOnePending(Cbom cbom, SyncRun run, List<DeferredIngest> deferred,
             CbomAssetSyncState claimedFrom) {
+        // Before the document read, not after it. A revision a later one has already ingested has nothing to
+        // contribute, and paying an HTTP read to find that out spends one of the run's max-ingest-documents slots and
+        // one of its ingestReads -- the figure settleUnreadable weighs its outage verdict on. A repository carrying
+        // many historical revisions is exactly the population this backlog pass exists for, so the budget would go on
+        // documents discarded on arrival. It also settles a superseded revision whose old document has since been
+        // removed upstream, which the read would otherwise report as a 404 failure retried for ever.
+        final Optional<CbomAssetIngestService.IngestOutcome> settled = assetIngestService
+                .settleWithoutReading(cbom.getUuid());
+        if (settled.isPresent()) {
+            countIngest(settled.get(), run);
+            return;
+        }
         final BomResponseDto document;
         try {
             document = read(cbom.getSerialNumber(), cbom.getVersion());
@@ -1271,6 +1283,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
             case REFUSED -> run.ingestRefused++;
             case FAILED -> run.ingestFailed++;
             case LOCKED_ELSEWHERE -> run.ingestLockedElsewhere++;
+            case SUPERSEDED -> run.ingestSuperseded++;
             // Nothing happened and nothing was left owing, so there is nothing for the run report to say. Both passes
             // return before reaching the ingest when the switch is off; this arm is what keeps a future caller that
             // does not from being counted as a failure.
@@ -1302,6 +1315,7 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
         int ingestRefused;
         int ingestFailed;
         int ingestLockedElsewhere;
+        int ingestSuperseded;
         int ingestUnavailable;
         /**
          * Document reads of the ingest pass that the repository answered, which is what tells an outage from a
@@ -1321,8 +1335,9 @@ public class CbomServiceImpl implements CbomExternalService, CbomInternalService
                     + "%d offers of permanently skipped entries failed again")
                     .formatted(read, pages, stored, duplicates, originals, invalid, recordedForRetry, retried, resolved,
                             permanentlySkipped, alreadyPermanent)
-                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d documents could not be re-read"
-                            .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestUnavailable);
+                    + "; ingested the cryptographic assets of %d CBOMs, refused %d documents, %d ingests failed, %d were left to another node, %d were superseded by a later version, %d documents could not be re-read"
+                            .formatted(ingested, ingestRefused, ingestFailed, ingestLockedElsewhere, ingestSuperseded,
+                                    ingestUnavailable);
         }
     }
 }
