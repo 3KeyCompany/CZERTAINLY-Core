@@ -21,4 +21,8 @@ public interface TokenInstanceBasicModel {
     UUID connectorInterfaceUuid();
 
     long tokenProfileCount();
+
+    default int providerInterfaceVersion() {
+        return connectorInterfaceUuid() == null ? 1 : 2;
+    }
 }

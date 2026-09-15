@@ -9,6 +9,7 @@ import com.otilm.api.exception.NotFoundException;
 import com.otilm.api.exception.ValidationError;
 import com.otilm.api.exception.ValidationException;
 import com.otilm.api.model.client.connector.v2.ConnectorVersion;
+import com.otilm.api.model.client.cryptography.key.KeyRequestType;
 import com.otilm.api.model.client.cryptography.tokenprofile.AddTokenProfileRequestDto;
 import com.otilm.api.model.client.cryptography.tokenprofile.EditTokenProfileRequestDto;
 import com.otilm.api.model.client.signing.profile.scheme.SigningScheme;
@@ -38,6 +39,7 @@ import com.otilm.core.service.TokenProfileInternalService;
 import com.otilm.core.util.BaseSpringBootTest;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -114,6 +116,35 @@ class TokenProfileServiceITest extends BaseSpringBootTest {
         Assertions.assertFalse(tokenProfiles.isEmpty());
         Assertions.assertEquals(1, tokenProfiles.size());
         Assertions.assertEquals(tokenProfile.getUuid().toString(), tokenProfiles.get(0).getUuid());
+    }
+
+    @Test
+    void listSupportedKeyRequestTypes_returnsLegacyTypes() throws Exception {
+        // given
+        List<KeyRequestType> expectedTypes = List.of(KeyRequestType.SECRET, KeyRequestType.KEY_PAIR);
+
+        // when
+        List<KeyRequestType> types = tokenProfileService
+                .listSupportedKeyRequestTypes(tokenInstanceReference.getSecuredParentUuid(),
+                        tokenProfile.getSecuredUuid());
+
+        // then
+        Assertions.assertEquals(expectedTypes, types);
+        Assertions.assertEquals(0, mockServer.getAllServeEvents().size());
+    }
+
+    @Test
+    void listSupportedKeyRequestTypes_rejectsForeignParent() {
+        // given
+        var foreignTokenUuid = SecuredParentUUID.fromUUID(UUID.randomUUID());
+
+        // when
+        Executable listTypes = () -> tokenProfileService
+                .listSupportedKeyRequestTypes(foreignTokenUuid, tokenProfile.getSecuredUuid());
+
+        // then
+        Assertions.assertThrows(NotFoundException.class, listTypes);
+        Assertions.assertEquals(0, mockServer.getAllServeEvents().size());
     }
 
     @Test

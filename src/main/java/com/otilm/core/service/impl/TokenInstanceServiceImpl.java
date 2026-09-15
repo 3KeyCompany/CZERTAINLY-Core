@@ -45,7 +45,7 @@ import com.otilm.core.service.handler.token.TokenProfileValidationCapability;
 import com.otilm.core.service.handler.token.TokenProviderAdapter;
 import com.otilm.core.service.handler.token.TokenProviderAdapterFactory;
 import com.otilm.core.service.handler.token.TokenProviderBinding;
-import com.otilm.core.service.v2.ConnectorExternalService;
+import com.otilm.core.service.v2.ConnectorInternalService;
 import com.otilm.core.service.writer.TokenInstanceReferenceWriter;
 import com.otilm.core.util.AttributeDefinitionUtils;
 import java.util.ArrayList;
@@ -67,7 +67,7 @@ public class TokenInstanceServiceImpl implements TokenInstanceExternalService, T
     // --------------------------------------------------------------------------------
     // Services & API Clients
     // --------------------------------------------------------------------------------
-    private ConnectorExternalService connectorExternalService;
+    private ConnectorInternalService connectorInternalService;
     private CredentialInternalService credentialService;
     private AttributeEngine attributeEngine;
     private ResourceInternalService resourceService;
@@ -114,8 +114,8 @@ public class TokenInstanceServiceImpl implements TokenInstanceExternalService, T
     }
 
     @Autowired
-    public void setConnectorExternalService(ConnectorExternalService connectorExternalService) {
-        this.connectorExternalService = connectorExternalService;
+    public void setConnectorInternalService(ConnectorInternalService connectorInternalService) {
+        this.connectorInternalService = connectorInternalService;
     }
 
     // -------------------------------------------------------------------------------------
@@ -143,7 +143,8 @@ public class TokenInstanceServiceImpl implements TokenInstanceExternalService, T
     public List<BaseAttribute> listTokenAttributes(SecuredUUID connectorUuid, @Nullable String kind)
             throws ConnectorException, NotFoundException {
         logger.info("Listing token attributes for connector '{}'", connectorUuid);
-        ImmutableConnectorFullModel connector = connectorExternalService.getConnectorFullModel(connectorUuid);
+        ImmutableConnectorFullModel connector = connectorInternalService
+                .getConnectorFullModelForApiClient(connectorUuid.getValue());
 
         return tokenProviderAdapterFactory.forConnector(connector).listTokenAttributes(kind);
     }
@@ -183,8 +184,8 @@ public class TokenInstanceServiceImpl implements TokenInstanceExternalService, T
                     ValidationError.create("The connector UUID '{}' is malformed", request.getConnectorUuid()));
         }
 
-        ImmutableConnectorFullModel connector = connectorExternalService
-                .getConnectorFullModel(SecuredUUID.fromUUID(connectorUuid));
+        ImmutableConnectorFullModel connector = connectorInternalService
+                .getConnectorFullModelForApiClient(connectorUuid);
         TokenProviderBinding binding = tokenProviderAdapterFactory.forConnectorWithBinding(connector);
         TokenProviderAdapter adapter = binding.adapter();
 
@@ -225,8 +226,8 @@ public class TokenInstanceServiceImpl implements TokenInstanceExternalService, T
         logger.info("Updating token instance with uuid: '{}'", uuid);
         TokenInstanceFullModel tokenInstance = getTokenInstanceModel(uuid);
 
-        ImmutableConnectorFullModel connector = connectorExternalService
-                .getConnectorFullModel(SecuredUUID.fromUUID(tokenInstance.connectorUuid()));
+        ImmutableConnectorFullModel connector = connectorInternalService
+                .getConnectorFullModelForApiClient(tokenInstance.connectorUuid());
         TokenProviderAdapter adapter = tokenProviderAdapterFactory.forToken(tokenInstance);
 
         attributeEngine.validateCustomAttributesContent(Resource.TOKEN, request.getCustomAttributes());

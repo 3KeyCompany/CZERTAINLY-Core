@@ -11,7 +11,8 @@ import java.util.UUID;
 /**
  * Immutable snapshot of a {@code CryptographicKeyItem} used on the signing / crypto hot path.
  */
-public record CryptographicKeyItemModel(UUID keyItemUuid, boolean enabled, KeyAlgorithm keyAlgorithm, KeyState keyState,
-        KeyType keyType, List<KeyUsage> keyUsage, String pqcParameterSpecName, // set only for PQC public keys
-        UUID keyReferenceUuid, UUID connectorUuid, UUID tokenInstanceUuid) {
+public record CryptographicKeyItemOperationModel(UUID keyItemUuid, boolean enabled, KeyAlgorithm keyAlgorithm,
+        KeyState keyState, KeyType keyType, List<KeyUsage> keyUsage, String pqcParameterSpecName, // set only for PQC
+                                                                                                  // public keys
+        RemoteKeyReference reference, UUID connectorUuid, UUID tokenInstanceUuid) {
 }

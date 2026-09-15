@@ -14,6 +14,9 @@ import com.otilm.api.model.core.cryptography.key.KeyState;
 import com.otilm.core.dao.entity.Certificate;
 import com.otilm.core.dao.entity.CryptographicKey;
 import com.otilm.core.dao.entity.Group;
+import com.otilm.core.mapper.crypto.CryptographicKeyDtoMapper;
+import com.otilm.core.model.crypto.CryptographicKeyFullModel;
+import com.otilm.core.model.crypto.ImmutableCryptographicKeyFullModel;
 import com.otilm.core.util.CertificateUtil;
 import com.otilm.core.util.MetaDefinitions;
 
@@ -167,11 +170,23 @@ public class CertificateDetailDtoMapper {
         }
 
         if (certificate.getKey() != null) {
-            dto.setKey(chainContext ? certificate.getKey().mapToChainDto() : certificate.getKey().mapToDto());
+            CryptographicKeyFullModel keyModel = chainContext
+                    ? ImmutableCryptographicKeyFullModel.fromForChain(certificate.getKey())
+                    : ImmutableCryptographicKeyFullModel.from(certificate.getKey());
+            dto
+                    .setKey(chainContext
+                            ? CryptographicKeyDtoMapper.mapToChainDto(keyModel)
+                            : CryptographicKeyDtoMapper.mapToDto(keyModel));
         }
 
         if (certificate.getAltKey() != null) {
-            dto.setAltKey(chainContext ? certificate.getAltKey().mapToChainDto() : certificate.getAltKey().mapToDto());
+            CryptographicKeyFullModel altKeyModel = chainContext
+                    ? ImmutableCryptographicKeyFullModel.fromForChain(certificate.getAltKey())
+                    : ImmutableCryptographicKeyFullModel.from(certificate.getAltKey());
+            dto
+                    .setAltKey(chainContext
+                            ? CryptographicKeyDtoMapper.mapToChainDto(altKeyModel)
+                            : CryptographicKeyDtoMapper.mapToDto(altKeyModel));
         }
 
         if (certificate.getProtocolAssociation() != null) {

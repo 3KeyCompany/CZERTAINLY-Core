@@ -12,6 +12,7 @@ import jakarta.persistence.criteria.Root;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,6 +27,7 @@ public interface TokenProfileRepository extends SecurityFilterRepository<TokenPr
 
     boolean existsByName(String name);
 
+    @EntityGraph(attributePaths = {"tokenInstanceReference.connectorInterface", "tokenInstanceReference.tokenProfiles"})
     @Query("""
             SELECT profile FROM TokenProfile profile
             JOIN FETCH profile.tokenInstanceReference token
@@ -55,14 +57,16 @@ public interface TokenProfileRepository extends SecurityFilterRepository<TokenPr
     }
 
     default List<TokenProfileFullModel> findFullModelsUsingSecurityFilter(SecurityFilter filter) {
-        return findUsingSecurityFilter(filter, List.of("tokenInstanceReference"), null)
+        return findUsingSecurityFilter(filter,
+                List.of("tokenInstanceReference.connectorInterface", "tokenInstanceReference.tokenProfiles"), null)
                 .stream()
                 .<TokenProfileFullModel>map(ImmutableTokenProfileFullModel::from)
                 .toList();
     }
 
     default List<TokenProfileFullModel> findFullModelsUsingSecurityFilter(SecurityFilter filter, boolean enabled) {
-        return findUsingSecurityFilter(filter, List.of("tokenInstanceReference"),
+        return findUsingSecurityFilter(filter,
+                List.of("tokenInstanceReference.connectorInterface", "tokenInstanceReference.tokenProfiles"),
                 (Root<TokenProfile> root, CriteriaBuilder cb, CriteriaQuery<?> query) -> cb
                         .equal(root.get("enabled"), enabled))
                 .stream()
