@@ -688,6 +688,22 @@ class SchedulerServiceMockedTest {
         verify(eventProducer).produceMessage(any());
     }
 
+    @Test
+    void testRunScheduledJob_WhenTheCloseWriteFails_ClosesTheRowAsFailedAndRethrows() throws Exception {
+        TestTask testTask = spy(new TestTask(new ScheduledTaskResult(SchedulerJobExecutionStatus.SUCCESS, "done")));
+
+        when(scheduledJobsRepository.findByJobName(JOB_NAME)).thenReturn(Optional.of(scheduledJob));
+        when(historyWriter.recordStarted(scheduledJob)).thenReturn(scheduledJobHistory);
+        when(applicationContext.getBean(eq(TestTask.class))).thenReturn(testTask);
+        doThrow(new IllegalStateException("pooler restarted")).when(historyWriter).recordFinished(any(), any());
+
+        assertThrows(IllegalStateException.class, () -> schedulerService.runScheduledJob(JOB_NAME));
+
+        // The row must not stay STARTED: a second close marks it FAILED and names the real outcome.
+        verify(historyWriter).recordFailed(eq(HISTORY_UUID), contains("SUCCESS"));
+        verify(eventProducer, never()).produceMessage(any());
+    }
+
     // Inner test class to simulate a ScheduledJobTask
     public static class TestTask implements ScheduledJobTask {
         private final ScheduledTaskResult result;

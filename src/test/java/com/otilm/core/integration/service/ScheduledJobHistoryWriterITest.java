@@ -98,6 +98,15 @@ class ScheduledJobHistoryWriterITest extends BaseSpringBootTest {
     }
 
     @Test
+    void recordUnknownTask_isTerminalWithAnEndTime() {
+        ScheduledJobHistory row = writer.recordUnknownTask(scheduledJob, "Unknown scheduled task");
+
+        ScheduledJobHistory stored = scheduledJobHistoryRepository.findById(row.getUuid()).orElseThrow();
+        assertEquals(SchedulerJobExecutionStatus.FAILED, stored.getSchedulerExecutionStatus());
+        assertNotNull(stored.getJobEndTime(), "a terminal row without an end time reads as a run still in flight");
+    }
+
+    @Test
     void removeSkipped_deletesTheRow() {
         ScheduledJobHistory started = writer.recordStarted(scheduledJob);
 

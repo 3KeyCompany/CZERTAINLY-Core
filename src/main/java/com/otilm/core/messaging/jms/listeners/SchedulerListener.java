@@ -42,8 +42,10 @@ public class SchedulerListener implements MessageProcessor<SchedulerJobExecution
             // Deliberately swallowed, so the endpoint acknowledges the message: a redelivery would run the job again.
             // Whatever the run recorded stands -- a FAILED row when the task threw, SUCCESS or FAILED when a side
             // effect after the status failed, nothing at all when the failure came before the STARTED row -- and this
-            // line names the job for whoever has to look. An Error is not caught here: its FAILED row is written all
-            // the same, and whether the message is redelivered is the JMS retry policy's call.
+            // line names the job for whoever has to look. An Error is not caught, here or below: runScheduledJob
+            // closes its row all the same, and whether the message is redelivered is the JMS retry policy's call -- a
+            // deterministic one exhausts it, a transient one (memory that comes back, a class that appears after a
+            // redeploy) gets its retry.
             logger.error("Scheduled job '{}' did not run to completion", schedulerMessage.getJobName(), e);
         }
     }

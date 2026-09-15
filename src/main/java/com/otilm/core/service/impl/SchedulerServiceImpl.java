@@ -320,12 +320,15 @@ public class SchedulerServiceImpl implements SchedulerExternalService, Scheduler
                 history.getUuid());
 
         final ScheduledTaskResult result;
+        boolean outcomeHandled = false;
         try {
             if (scheduledJob.getUserUuid() != null) {
                 authHelper.authenticateAsUser(scheduledJob.getUserUuid());
             }
             result = scheduledJobTask.performJob(jobInfo, scheduledJob.getObjectData());
+            outcomeHandled = true;
         } catch (ScheduledJobSkippedException e) {
+            outcomeHandled = true;
             logger.debug("Skipping scheduled job '{}', removing history entry", scheduledJob.getJobName());
             try {
                 historyWriter.removeSkipped(history.getUuid());
@@ -336,20 +339,33 @@ public class SchedulerServiceImpl implements SchedulerExternalService, Scheduler
                                 scheduledJob.getJobName(), history.getUuid(), bookkeeping);
             }
             return;
-        } catch (RuntimeException | Error e) {
-            // Threw, as opposed to returned null: without this the row would stay STARTED forever -- an Error
-            // (a missing optional class, a stack overflow) as much as an exception -- and deleteScheduledJob would
-            // refuse the job as "executing". The text is shaped: an exception's own message can quote driver or
-            // framework internals, and this one reaches the scheduler API.
+        } catch (RuntimeException e) {
+            outcomeHandled = true;
+            // Threw, as opposed to returned null: without this the row would stay STARTED forever and
+            // deleteScheduledJob would refuse the job as "executing". The text is shaped: an exception's own message
+            // can quote driver or framework internals, and this one reaches the scheduler API.
             try {
                 historyWriter
                         .recordFailed(history.getUuid(),
                                 PlatformException.safeMessage(e, "The job failed unexpectedly; see the Core log"));
-            } catch (RuntimeException | Error bookkeeping) {
+            } catch (RuntimeException bookkeeping) {
                 // The task's own failure is the one to surface; the bookkeeping failure rides along.
                 e.addSuppressed(bookkeeping);
             }
             throw e;
+        } finally {
+            if (!outcomeHandled) {
+                // Only an Error gets here (performJob declares no checked exception). It is not caught -- whether the
+                // message is redelivered is the JMS retry policy's call -- but the row it would leave behind is closed,
+                // or deleteScheduledJob would refuse the job as "executing" forever.
+                try {
+                    historyWriter.recordFailed(history.getUuid(), "The job failed with an error; see the Core log");
+                } catch (RuntimeException bookkeeping) {
+                    logger
+                            .error("Scheduled job '{}' failed with an error and its history row {} could not be closed",
+                                    scheduledJob.getJobName(), history.getUuid(), bookkeeping);
+                }
+            }
         }
 
         if (result == null) {
@@ -361,11 +377,11 @@ public class SchedulerServiceImpl implements SchedulerExternalService, Scheduler
     }
 
     /**
-     * {@code NOT_SUPPORTED} rather than {@code REQUIRES_NEW}. Either keeps the writer's own transaction out of the
-     * publishing one -- committed by now, but still registered in the {@code AFTER_COMMIT} phase, so a plain
-     * {@code REQUIRED} write would join it and be lost -- but only {@code NOT_SUPPORTED} also keeps the deregistration
-     * call to the scheduler and the finished-job event outside any database transaction, holding no connection across
-     * them. The status commits first, then the outside is told: the order the history has to be able to vouch for.
+     * {@code NOT_SUPPORTED}: this runs in the {@code AFTER_COMMIT} phase of the publishing transaction, which is
+     * committed but still registered, so a {@code REQUIRED} write made here would join it and be lost. Suspending it
+     * lets the writer's {@code REQUIRED} methods start transactions of their own, and keeps the deregistration call to
+     * the scheduler and the finished-job event outside any database transaction. The status commits first, then the
+     * outside is told: the order the history has to be able to vouch for.
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -387,7 +403,21 @@ public class SchedulerServiceImpl implements SchedulerExternalService, Scheduler
     private void finalizeFinishedScheduledJob(ScheduledJob scheduledJob, UUID historyUuid, ScheduledTaskResult result) {
         logger.debug("Finalizing finished scheduled job '{}'", scheduledJob.getJobName());
 
-        historyWriter.recordFinished(historyUuid, result);
+        try {
+            historyWriter.recordFinished(historyUuid, result);
+        } catch (RuntimeException e) {
+            // The close write failed -- a failover, a pooler restart. The row must not stay STARTED, so a second close
+            // marks it FAILED and names the real outcome; the outside is told nothing the history cannot confirm, and
+            // a missing SUCCESS row only makes the next sync re-list, which is safe.
+            try {
+                historyWriter
+                        .recordFailed(historyUuid, "The run finished with " + result.getStatus()
+                                + " but its history could not be closed; see the Core log");
+            } catch (RuntimeException again) {
+                e.addSuppressed(again);
+            }
+            throw e;
+        }
 
         // deregister one-time job
         if (SchedulerJobExecutionStatus.SUCCESS.equals(result.getStatus()) && scheduledJob.isOneTime()) {
