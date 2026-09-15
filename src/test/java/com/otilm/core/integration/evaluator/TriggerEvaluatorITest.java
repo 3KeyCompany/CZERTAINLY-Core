@@ -408,6 +408,47 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
     }
 
     @Test
+    void absentValueIsNotMetByComparisonsAndNeverFails() throws RuleException {
+        Comment comment = new Comment();
+        comment.setResource(Resource.RA_PROFILE);
+        comment.setObjectUuid(UUID.randomUUID());
+        comment.setAuthorUuid(UUID.randomUUID());
+        comment.setAuthorUsername("tst-author");
+        comment.setBody("open thread");
+        condition.setFieldSource(FilterFieldSource.PROPERTY);
+        condition.setFieldIdentifier(FilterField.COMMENT_RESOLVED_AT.name());
+
+        // A thread not yet resolved has no timestamp to compare
+        condition.setOperator(FilterConditionOperator.GREATER);
+        condition.setValue("2019-12-01T22:10:00.274+00:00");
+        Assertions.assertFalse(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+        condition.setOperator(FilterConditionOperator.IN_NEXT);
+        condition.setValue("P7D");
+        Assertions.assertFalse(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+        condition.setOperator(FilterConditionOperator.EQUALS);
+        condition.setValue("2019-12-01T22:10:00.274+00:00");
+        Assertions.assertFalse(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+        condition.setOperator(FilterConditionOperator.NOT_EQUALS);
+        Assertions.assertTrue(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+        condition.setOperator(FilterConditionOperator.NOT_EMPTY);
+        Assertions.assertFalse(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+
+        // Once resolved, the same comparison is answered on the value
+        comment.setResolvedAt(OffsetDateTime.now());
+        condition.setOperator(FilterConditionOperator.GREATER);
+        Assertions.assertTrue(commentTriggerEvaluator.evaluateConditionItem(condition, comment, Resource.COMMENT));
+
+        // The same holds for any other field type without a value
+        certificate.setSerialNumber(null);
+        condition.setFieldIdentifier(FilterField.SERIAL_NUMBER.name());
+        condition.setOperator(FilterConditionOperator.CONTAINS);
+        condition.setValue("1");
+        Assertions
+                .assertFalse(certificateTriggerEvaluator
+                        .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
+    }
+
+    @Test
     void testCertificateRuleEvaluatorOnBooleanProperty() throws RuleException {
         condition.setFieldSource(FilterFieldSource.PROPERTY);
         certificate.setTrustedCa(true);
@@ -609,10 +650,11 @@ class TriggerEvaluatorITest extends BaseSpringBootTest {
                 .assertThrows(RuleException.class, () -> certificateTriggerEvaluator
                         .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
 
+        // An absent common name is simply not met; the earlier exception here came from dereferencing the null
         condition.setValue(123);
         condition.setOperator(FilterConditionOperator.CONTAINS);
         Assertions
-                .assertThrows(RuleException.class, () -> certificateTriggerEvaluator
+                .assertFalse(certificateTriggerEvaluator
                         .evaluateConditionItem(condition, certificate, Resource.CERTIFICATE));
 
         condition.setFieldIdentifier("expiryInDays");

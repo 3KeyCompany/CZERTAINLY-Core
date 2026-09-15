@@ -275,10 +275,14 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         // whether the condition is satisfied
         try {
             if (!(objectValue instanceof Collection<?> objectValues)) {
-                if (objectValue != null && filterField.getEnumClass() != null) {
+                BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, fieldIdentifier);
+                if (objectValue == null) {
+                    return evaluateAbsentValue(operator);
+                }
+                if (filterField.getEnumClass() != null) {
                     objectValue = ((IPlatformEnum) objectValue).getCode();
                 }
-                return fieldTypeToOperatorActionMap.get(fieldType).get(operator).test(objectValue, conditionValue);
+                return comparison.test(objectValue, conditionValue);
             }
 
             if (listSpecificOperatorsFunctionMap.get(operator) != null) {
@@ -287,6 +291,8 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
 
             return evaluateItemsInCollection(operator, conditionValue, objectValues, nestedJoinAttributes, filterField,
                     fieldType);
+        } catch (RuleException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuleException("Condition is not set properly: " + e.getMessage());
         }
@@ -294,16 +300,18 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
 
     private boolean evaluateItemsInCollection(FilterConditionOperator operator, Object conditionValue,
             Collection<?> objectValues, List<Attribute> nestedJoinAttributes, FilterField filterField,
-            FilterFieldType fieldType) throws InvocationTargetException, IllegalAccessException, NoSuchMethodException {
+            FilterFieldType fieldType)
+            throws InvocationTargetException, IllegalAccessException, NoSuchMethodException, RuleException {
         // For EQUALS, if no true evaluation during loop, result stays false, for NOT_EQUALS, if there is no false
         // evaluation during loop, result stays true
         boolean result = (operator == FilterConditionOperator.NOT_EQUALS);
+        BiPredicate<Object, Object> comparison = comparisonFor(fieldType, operator, filterField.name());
         for (Object item : objectValues) {
             if (nestedJoinAttributes != null) {
                 item = getPropertyValue(item, nestedJoinAttributes, filterField.getFieldAttribute());
             }
 
-            boolean eval = fieldTypeToOperatorActionMap.get(fieldType).get(operator).test(item, conditionValue);
+            boolean eval = item == null ? evaluateAbsentValue(operator) : comparison.test(item, conditionValue);
 
             // For EQUALS: succeed if any true
             // For NOT_EQUALS: fail if any false
@@ -315,6 +323,26 @@ public class TriggerEvaluator<T extends UniquelyIdentifiedObject> implements ITr
         }
 
         return result;
+    }
+
+    private static BiPredicate<Object, Object> comparisonFor(FilterFieldType fieldType,
+            FilterConditionOperator operator, String fieldIdentifier) throws RuleException {
+        BiPredicate<Object, Object> comparison = fieldTypeToOperatorActionMap.get(fieldType).get(operator);
+        if (comparison == null) {
+            throw new RuleException("Condition is not set properly: operator '%s' cannot be applied to field %s"
+                    .formatted(operator.getLabel(), fieldIdentifier));
+        }
+        return comparison;
+    }
+
+    /**
+     * What a condition can say about a value the object does not have: it is absent and equals nothing, so only the
+     * presence operators and the equality pair have an answer; a comparison has nothing to compare and is not met.
+     * Reaching the operator lambdas with a null would fail inside them and be reported as a misconfigured condition,
+     * which it is not.
+     */
+    private static boolean evaluateAbsentValue(FilterConditionOperator operator) {
+        return operator == FilterConditionOperator.EMPTY || operator == FilterConditionOperator.NOT_EQUALS;
     }
 
     private boolean evaluateMetaAttributeConditionItem(Resource resource, String fieldIdentifier, UUID objectUuid,
